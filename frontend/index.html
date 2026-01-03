@@ -104,20 +104,20 @@
     <script>
         // Replace with your actual API endpoints
         // Replace the API_CONFIG in your HTML file
-const API_CONFIG = {
-    BASE_URL: '/api', // Changed to match your folder structure
-    ENDPOINTS: {
-        LOGIN: '/auth?action=login',
-        REGISTER: '/auth?action=register',
-        LOGOUT: '/auth?action=logout',
-        ISSUE_SHARES: '/ledger?action=issue',
-        TRANSFER_SHARES: '/ledger?action=transfer',
-        GET_OWNERSHIP: '/ledger?action=ownership',
-        GET_STATEMENT: '/ledger?action=statement',
-        EXPORT_LEDGER: '/ledger?action=export',
-        GET_ALL_HOLDERS: '/ledger?action=holders',
-        IMPORT_HOLDERS: '/ledger?action=import-holders'
-    }
+    const API_CONFIG = {
+      BASE_URL: '/api',
+      ENDPOINTS: {
+        LOGIN: '/auth',
+        REGISTER: '/auth',
+        LOGOUT: '/auth',
+        ISSUE_SHARES: '/ledger',
+        TRANSFER_SHARES: '/ledger',
+        GET_OWNERSHIP: '/ledger',
+        GET_STATEMENT: '/ledger',
+        EXPORT_LEDGER: '/ledger',
+        GET_ALL_HOLDERS: '/ledger',
+        IMPORT_HOLDERS: '/ledger'
+      }
 };
 
 
