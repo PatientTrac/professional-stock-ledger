@@ -1,0 +1,30 @@
+{
+  "name": "ledger-app",
+  "version": "1.0.0",
+  "description": "Multi-user ledger application",
+  "scripts": {
+    "build": "echo 'No build step required'",
+    "dev": "netlify dev",
+    "deploy": "netlify deploy --prod",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "netlify dev:exec drizzle-kit migrate",
+    "db:studio": "netlify dev:exec drizzle-kit studio"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "@netlify/neon": "^0.1.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.1",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.8",
+    "netlify-cli": "^23.7.3"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "type": "commonjs",
+  "license": "ISC"
+}

@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preferred Stock Ledger Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        * { 
+            font-family: 'Inter', sans-serif; 
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .toast.show {
+            transform: translateX(0);
+        }
+        .toast.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        .toast.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        .toast.info {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        }
+        .btn-loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .full-page-loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            z-index: 99999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .full-page-loader.hidden {
+            display: none;
+        }
+        .full-page-loader .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(102, 126, 234, 0.1);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+        }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 10;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Full Page Loader -->
+    <div id="full-page-loader" class="full-page-loader hidden">
+        <div class="spinner"></div>
+        <p id="full-page-loader-text">Processing...</p>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- API Configuration -->
+    <script>
+        // Replace with your actual API endpoints
+        // Replace the API_CONFIG in your HTML file
+const API_CONFIG = {
+    BASE_URL: '/.netlify/functions', // Changed to match your folder structure
+    ENDPOINTS: {
+        LOGIN: '/auth?action=login',
+        REGISTER: '/auth?action=register',
+        LOGOUT: '/auth?action=logout',
+        ISSUE_SHARES: '/ledger?action=issue',
+        TRANSFER_SHARES: '/ledger?action=transfer',
+        GET_OWNERSHIP: '/ledger?action=ownership',
+        GET_STATEMENT: '/ledger?action=statement',
+        EXPORT_LEDGER: '/ledger?action=export',
+        GET_ALL_HOLDERS: '/ledger?action=holders',
+        IMPORT_HOLDERS: '/ledger?action=import-holders'
+    }
+};
+
+
+    </script>
+
+    <!-- Auth Container -->
+    <div id="auth-container" class="min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-md w-full">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">📊 Preferred Stock Ledger</h1>
+                <p class="text-gray-600">Manage preferred stock issuances, transfers, and statements</p>
+            </div>
+
+            <!-- Login Form -->
+            <div id="login-page" class="bg-white rounded-2xl shadow-xl p-6 md:p-8 relative">
+                <div id="login-overlay" class="loading-overlay hidden">
+                    <div class="text-center">
+                        <div class="inline-block animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
+                        <p class="mt-3 text-gray-600">Signing in...</p>
+                    </div>
+                </div>
+                <h2 class="text-2xl font-bold mb-6 text-gray-800">Login</h2>
+                <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-2">Email</label>
+                        <input type="email" id="login-email" placeholder="admin@example.com" 
+                               class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-2">Password</label>
+                        <input type="password" id="login-password" placeholder="••••••••" 
+                               class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                    </div>
+                    <button type="submit" id="login-btn" class="bg-blue-600 text-white w-full py-3 rounded-lg font-medium text-lg mt-2 flex items-center justify-center hover:bg-blue-700 transition-colors">
+                        <span id="login-btn-text">Sign In</span>
+                        <div id="login-loader" class="btn-loader ml-2 hidden"></div>
+                    </button>
+                </form>
+                <div id="login-error" class="mt-4 p-3 bg-red-50 text-red-700 rounded-lg hidden"></div>
+                <div class="mt-6 text-center">
+                    <p class="text-gray-600">Don't have an account? 
+                        <button onclick="showRegisterPage()" class="text-blue-600 font-medium hover:text-blue-800 transition-colors">
+                            Register
+                        </button>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Register Form -->
+            <div id="register-page" class="bg-white rounded-2xl shadow-xl p-6 md:p-8 relative hidden">
+                <div id="register-overlay" class="loading-overlay hidden">
+                    <div class="text-center">
+                        <div class="inline-block animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
+                        <p class="mt-3 text-gray-600">Creating account...</p>
+                    </div>
+                </div>
+                <h2 class="text-2xl font-bold mb-6 text-gray-800">Register</h2>
+                <form id="register-form" onsubmit="handleRegister(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-2">Full Name</label>
+                        <input type="text" id="register-name" placeholder="John Doe" 
+                               class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-2">Email</label>
+                        <input type="email" id="register-email" placeholder="admin@example.com" 
+                               class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-2">Password</label>
+                        <input type="password" id="register-password" placeholder="••••••••" 
+                               class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                    </div>
+                    <button type="submit" id="register-btn" class="bg-blue-600 text-white w-full py-3 rounded-lg font-medium text-lg mt-2 flex items-center justify-center hover:bg-blue-700 transition-colors">
+                        <span id="register-btn-text">Create Account</span>
+                        <div id="register-loader" class="btn-loader ml-2 hidden"></div>
+                    </button>
+                </form>
+                <div id="register-error" class="mt-4 p-3 bg-red-50 text-red-700 rounded-lg hidden"></div>
+                <div id="register-success" class="mt-4 p-3 bg-green-50 text-green-700 rounded-lg hidden">
+                    Registration successful! Redirecting to login...
+                </div>
+                <div class="mt-6 text-center">
+                    <p class="text-gray-600">Already have an account? 
+                        <button onclick="showLoginPage()" class="text-blue-600 font-medium hover:text-blue-800 transition-colors">
+                            Sign In
+                        </button>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="app-container" class="hidden">
+        <!-- Navigation -->
+        <nav class="bg-white shadow-lg">
+            <div class="container mx-auto px-4 py-4">
+                <div class="flex items-center justify-between">
+                    <h1 class="text-2xl font-bold text-gray-800">📊 Preferred Stock Ledger</h1>
+                    <div class="flex items-center space-x-4">
+                        <span id="username" class="text-gray-700 font-medium"></span>
+                        <button onclick="logout()" id="logout-btn" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center">
+                            <span id="logout-btn-text">Logout</span>
+                            <div id="logout-loader" class="btn-loader ml-2 hidden"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="container mx-auto px-4 py-6">
+            <!-- Tabs Navigation -->
+            <div class="mb-6 border-b border-gray-200">
+                <div class="flex space-x-4 overflow-x-auto">
+                    <button onclick="showTab('issue')" id="tab-issue" class="tab-btn py-3 px-4 font-medium text-gray-600 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 transition-colors whitespace-nowrap">
+                        Issue Shares
+                    </button>
+                    <button onclick="showTab('transfer')" id="tab-transfer" class="tab-btn py-3 px-4 font-medium text-gray-600 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 transition-colors whitespace-nowrap">
+                        Transfer Shares
+                    </button>
+                    <button onclick="showTab('statement')" id="tab-statement" class="tab-btn py-3 px-4 font-medium text-gray-600 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 transition-colors whitespace-nowrap">
+                        Generate Statement
+                    </button>
+                    <button onclick="showTab('ownership')" id="tab-ownership" class="tab-btn py-3 px-4 font-medium text-gray-600 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 transition-colors whitespace-nowrap">
+                        View Ownership
+                    </button>
+                    <button onclick="showTab('import')" id="tab-import" class="tab-btn py-3 px-4 font-medium text-gray-600 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 transition-colors whitespace-nowrap">
+                        Import Holders
+                    </button>
+                </div>
+            </div>
+
+            <!-- Issue Shares Tab -->
+            <div id="tab-content-issue" class="tab-content hidden">
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-6 text-gray-800">Issue New Shares</h2>
+                    <form id="issue-form" onsubmit="issueShares(event)" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">Shareholder</label>
+                                <select id="issue-shareholder" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                                    <option value="">Select Shareholder</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">Shares</label>
+                                <input type="number" step="0.01" id="issue-shares" min="0" placeholder="1000.00" 
+                                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">Issue Date</label>
+                                <input type="date" id="issue-date" 
+                                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">Dividend Rate (%)</label>
+                                <input type="number" step="0.01" id="dividend-rate" min="0" placeholder="5.0" 
+                                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">Liquidation Preference</label>
+                                <input type="number" step="0.01" id="liquidation-pref" min="0" placeholder="1.0" value="1.0"
+                                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                            </div>
+                        </div>
+                        <button type="submit" id="issue-btn" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center">
+                            <span id="issue-btn-text">Issue Shares</span>
+                            <div id="issue-loader" class="btn-loader ml-2 hidden"></div>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Transfer Shares Tab -->
+            <div id="tab-content-transfer" class="tab-content hidden">
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-6 text-gray-800">Transfer Shares</h2>
+                    <form id="transfer-form" onsubmit="transferShares(event)" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">From Shareholder</label>
+                                <select id="from-shareholder" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                                    <option value="">Select Shareholder</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">To Shareholder</label>
+                                <select id="to-shareholder" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                                    <option value="">Select Shareholder</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-medium mb-2">Shares to Transfer</label>
+                                <input type="number" step="0.01" id="transfer-shares" min="0" placeholder="100.00" 
+                                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" required>
+                            </div>
+                        </div>
+                        <button type="submit" id="transfer-btn" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center">
+                            <span id="transfer-btn-text">Transfer Shares</span>
+                            <div id="transfer-loader" class="btn-loader ml-2 hidden"></div>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Generate Statement Tab -->
+            <div id="tab-content-statement" class="tab-content hidden">
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-6 text-gray-800">Generate Statement</h2>
+                    <div class="space-y-4">
+                        <div class="flex space-x-4">
+                            <select id="statement-shareholder" class="w-full md:w-1/3 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                                <option value="">Select Shareholder</option>
+                            </select>
+                            <button onclick="generateStatement()" id="generate-statement-btn" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center">
+                                <span id="generate-statement-btn-text">Generate Statement</span>
+                                <div id="generate-statement-loader" class="btn-loader ml-2 hidden"></div>
+                            </button>
+                        </div>
+                        
+                        <div id="statement-result" class="hidden">
+                            <div class="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                                <h3 class="text-lg font-bold mb-4 text-gray-800">Statement Details</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                    <div class="bg-white p-4 rounded-lg shadow">
+                                        <p class="text-gray-600 text-sm">Current Shares</p>
+                                        <p id="statement-current-shares" class="text-2xl font-bold text-gray-800">0</p>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-lg shadow">
+                                        <p class="text-gray-600 text-sm">Est. Annual Dividends</p>
+                                        <p id="statement-annual-dividends" class="text-2xl font-bold text-green-600">$0.00</p>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-lg shadow">
+                                        <p class="text-gray-600 text-sm">Prorated Dividends</p>
+                                        <p id="statement-prorated-dividends" class="text-2xl font-bold text-blue-600">$0.00</p>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-lg shadow">
+                                        <p class="text-gray-600 text-sm">Avg. Liquidation Pref</p>
+                                        <p id="statement-avg-liq-pref" class="text-2xl font-bold text-gray-800">0.00</p>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <h4 class="font-bold mb-3 text-gray-800">Transaction History</h4>
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full">
+                                            <thead class="bg-gray-100">
+                                                <tr>
+                                                    <th class="p-3 font-bold text-gray-700 text-left">Date</th>
+                                                    <th class="p-3 font-bold text-gray-700 text-left">Type</th>
+                                                    <th class="p-3 font-bold text-gray-700 text-left">Shares</th>
+                                                    <th class="p-3 font-bold text-gray-700 text-left">Dividend Rate</th>
+                                                    <th class="p-3 font-bold text-gray-700 text-left">Liquidation Pref</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="statement-transactions" class="divide-y divide-gray-200"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View Ownership Tab -->
+            <div id="tab-content-ownership" class="tab-content hidden">
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold text-gray-800">Current Ownership</h2>
+                        <div class="flex space-x-3">
+                            <button onclick="exportCSV()" id="export-csv-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center">
+                                <span id="export-csv-btn-text">Export CSV</span>
+                                <div id="export-csv-loader" class="btn-loader ml-2 hidden"></div>
+                            </button>
+                            <button onclick="exportExcel()" id="export-excel-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center">
+                                <span id="export-excel-btn-text">Export Excel</span>
+                                <div id="export-excel-loader" class="btn-loader ml-2 hidden"></div>
+                            </button>
+                            <button onclick="exportPDF()" id="export-pdf-btn" class="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors flex items-center">
+                                <span id="export-pdf-btn-text">Export PDF</span>
+                                <div id="export-pdf-loader" class="btn-loader ml-2 hidden"></div>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="p-3 font-bold text-gray-700 text-left">Shareholder</th>
+                                    <th class="p-3 font-bold text-gray-700 text-left">Total Shares</th>
+                                    <th class="p-3 font-bold text-gray-700 text-left">Avg. Dividend Rate</th>
+                                    <th class="p-3 font-bold text-gray-700 text-left">Avg. Liquidation Pref</th>
+                                    <th class="p-3 font-bold text-gray-700 text-left">Est. Annual Dividends</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ownership-table" class="divide-y divide-gray-200"></tbody>
+                        </table>
+                    </div>
+                    <div id="ownership-loading" class="text-center py-8">
+                        <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                        <p class="mt-2 text-gray-600">Loading ownership data...</p>
+                    </div>
+                    <div id="no-ownership" class="text-center py-8 hidden">
+                        <p class="text-gray-600">No ownership data found</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Import Holders Tab -->
+            <div id="tab-content-import" class="tab-content hidden">
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-6 text-gray-800">Import Shareholders from Excel</h2>
+                    <div class="space-y-6">
+                        <!-- File Upload -->
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                            <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" class="hidden">
+                            <div id="drop-zone" class="cursor-pointer">
+                                <svg class="w-16 h-16 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                </svg>
+                                <p class="mt-4 text-gray-600">Drag & drop Excel file here or click to browse</p>
+                                <p class="text-sm text-gray-500 mt-2">Supports .xlsx, .xls, .csv formats</p>
+                                <button type="button" onclick="document.getElementById('excel-file').click()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                                    Browse Files
+                                </button>
+                            </div>
+                            <div id="file-info" class="mt-4 hidden">
+                                <p class="text-green-600">File selected: <span id="file-name"></span></p>
+                            </div>
+                        </div>
+
+                        <!-- Excel Template -->
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <h3 class="font-bold text-blue-800 mb-2">Excel Template Format</h3>
+                            <p class="text-blue-700 text-sm mb-2">Your Excel file should include these columns (you can add more):</p>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-blue-100">
+                                        <tr>
+                                            <th class="p-2">CUSIP</th>
+                                            <th class="p-2">TAX-ID</th>
+                                            <th class="p-2">HOLDER REG 1</th>
+                                            <th class="p-2">TOTAL SHARES</th>
+                                            <th class="p-2">EMAIL ADDRESS</th>
+                                            <th class="p-2">PHONE NUMBER</th>
+                                            <th class="p-2">CITY</th>
+                                            <th class="p-2">STATE</th>
+                                        </tr>
+                                    </thead>
+                                </table>
+                            </div>
+                            <button onclick="downloadTemplate()" class="mt-3 text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                Download Template
+                            </button>
+                        </div>
+
+                        <!-- Import Button -->
+                        <button onclick="importExcel()" id="import-btn" class="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center">
+                            <span id="import-btn-text">Import Shareholders</span>
+                            <div id="import-loader" class="btn-loader ml-2 hidden"></div>
+                        </button>
+
+                        <!-- Import Results -->
+                        <div id="import-results" class="hidden">
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h3 class="font-bold mb-2">Import Results</h3>
+                                <p>Successfully imported: <span id="import-success-count" class="font-bold text-green-600">0</span> records</p>
+                                <p>Failed: <span id="import-failed-count" class="font-bold text-red-600">0</span> records</p>
+                                <div id="import-errors" class="mt-2 text-sm text-red-600"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // UTILITY FUNCTIONS
+        // ============================================
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => container.removeChild(toast), 300);
+            }, duration);
+        }
+
+        function setButtonLoading(buttonId, isLoading) {
+            const button = document.getElementById(buttonId);
+            const text = document.getElementById(`${buttonId}-text`);
+            const loader = document.getElementById(`${buttonId}-loader`);
+            
+            if (button && text && loader) {
+                button.disabled = isLoading;
+                loader.classList.toggle('hidden', !isLoading);
+                text.style.opacity = isLoading ? '0.7' : '1';
+            }
+        }
+
+        function showFullPageLoader(message = 'Processing...') {
+            const loader = document.getElementById('full-page-loader');
+            const text = document.getElementById('full-page-loader-text');
+            text.textContent = message;
+            loader.classList.remove('hidden');
+        }
+
+        function hideFullPageLoader() {
+            const loader = document.getElementById('full-page-loader');
+            loader.classList.add('hidden');
+        }
+
+      // And update the apiRequest function to handle errors better:
+async function apiRequest(endpoint, options = {}) {
+    const token = localStorage.getItem('token');
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...options.headers
+    };
+
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    console.log('API Request:', { url, method: options.method || 'GET', headers });
+    
+    try {
+        const response = await fetch(url, {
+            ...options,
+            headers
+        });
+
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            console.error('Non-JSON response:', text.substring(0, 200));
+            throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
+
+        console.log('API Response:', { status: response.status, data });
+        
+        if (!response.ok) {
+            throw new Error(data.error || data.message || `Request failed with status ${response.status}`);
+        }
+
+        return { success: true, data };
+    } catch (error) {
+        console.error('API Error:', error.message);
+        showToast(error.message || 'Network error. Please try again.', 'error');
+        return { success: false, error: error.message };
+    }
+}
+        // ============================================
+        // AUTHENTICATION
+        // ============================================
+        let currentUser = null;
+
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+            
+            if (token && user) {
+                currentUser = JSON.parse(user);
+                document.getElementById('auth-container').classList.add('hidden');
+                document.getElementById('app-container').classList.remove('hidden');
+                document.getElementById('username').textContent = currentUser.name;
+                loadShareholders();
+                showTab('issue');
+            }
+        }
+
+        function showLoginPage() {
+            document.getElementById('register-page').classList.add('hidden');
+            document.getElementById('login-page').classList.remove('hidden');
+            document.getElementById('login-error').classList.add('hidden');
+        }
+
+        function showRegisterPage() {
+            document.getElementById('login-page').classList.add('hidden');
+            document.getElementById('register-page').classList.remove('hidden');
+            document.getElementById('register-error').classList.add('hidden');
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+
+            errorDiv.classList.add('hidden');
+            setButtonLoading('login-btn', true);
+
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.LOGIN, {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password })
+                });
+
+                if (result.success) {
+                    localStorage.setItem('token', result.data.token);
+                    localStorage.setItem('user', JSON.stringify(result.data.user));
+                    showToast('Login successful!', 'success');
+                    checkAuth();
+                } else {
+                    errorDiv.textContent = result.error;
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Login failed. Please try again.';
+                errorDiv.classList.remove('hidden');
+            } finally {
+                setButtonLoading('login-btn', false);
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('register-name').value;
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+            const errorDiv = document.getElementById('register-error');
+            const successDiv = document.getElementById('register-success');
+
+            errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+            setButtonLoading('register-btn', true);
+
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.REGISTER, {
+                    method: 'POST',
+                    body: JSON.stringify({ name, email, password })
+                });
+
+                if (result.success) {
+                    successDiv.textContent = 'Registration successful! Redirecting to login...';
+                    successDiv.classList.remove('hidden');
+                    showToast('Registration successful!', 'success');
+                    
+                    setTimeout(() => {
+                        showLoginPage();
+                    }, 2000);
+                } else {
+                    errorDiv.textContent = result.error;
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Registration failed. Please try again.';
+                errorDiv.classList.remove('hidden');
+            } finally {
+                setButtonLoading('register-btn', false);
+            }
+        }
+
+        async function logout() {
+            setButtonLoading('logout-btn', true);
+            
+            try {
+                await apiRequest(API_CONFIG.ENDPOINTS.LOGOUT);
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                currentUser = null;
+                showToast('Logged out successfully', 'info');
+                document.getElementById('auth-container').classList.remove('hidden');
+                document.getElementById('app-container').classList.add('hidden');
+            } catch (error) {
+                showToast('Logout failed', 'error');
+            } finally {
+                setButtonLoading('logout-btn', false);
+            }
+        }
+
+        // ============================================
+        // TAB MANAGEMENT
+        // ============================================
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.add('hidden');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('border-blue-600', 'text-blue-600');
+                el.classList.add('border-transparent', 'text-gray-600');
+            });
+            
+            // Show selected tab content
+            document.getElementById(`tab-content-${tabName}`).classList.remove('hidden');
+            
+            // Set active tab
+            document.getElementById(`tab-${tabName}`).classList.remove('border-transparent', 'text-gray-600');
+            document.getElementById(`tab-${tabName}`).classList.add('border-blue-600', 'text-blue-600');
+            
+            // Load data for specific tabs
+            if (tabName === 'ownership') {
+                loadOwnership();
+            } else if (tabName === 'statement') {
+                loadShareholdersForStatement();
+            }
+        }
+
+        // ============================================
+        // SHAREHOLDER MANAGEMENT
+        // ============================================
+        async function loadShareholders() {
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_ALL_HOLDERS);
+                if (result.success) {
+                    const selectElements = [
+                        'issue-shareholder',
+                        'from-shareholder', 
+                        'to-shareholder'
+                    ];
+                    
+                    selectElements.forEach(selectId => {
+                        const select = document.getElementById(selectId);
+                        select.innerHTML = '<option value="">Select Shareholder</option>';
+                        result.data.forEach(holder => {
+                            const option = document.createElement('option');
+                            option.value = holder.id;
+                            option.textContent = holder.name || holder['HOLDER REG 1'];
+                            select.appendChild(option);
+                        });
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load shareholders:', error);
+            }
+        }
+
+        async function loadShareholdersForStatement() {
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_ALL_HOLDERS);
+                if (result.success) {
+                    const select = document.getElementById('statement-shareholder');
+                    select.innerHTML = '<option value="">Select Shareholder</option>';
+                    result.data.forEach(holder => {
+                        const option = document.createElement('option');
+                        option.value = holder.id;
+                        option.textContent = holder.name || holder['HOLDER REG 1'];
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load shareholders:', error);
+            }
+        }
+
+        // ============================================
+        // LEDGER OPERATIONS
+        // ============================================
+        async function issueShares(e) {
+            e.preventDefault();
+            
+            const shareholderId = document.getElementById('issue-shareholder').value;
+            const shares = parseFloat(document.getElementById('issue-shares').value);
+            const issueDate = document.getElementById('issue-date').value;
+            const dividendRate = parseFloat(document.getElementById('dividend-rate').value);
+            const liquidationPref = parseFloat(document.getElementById('liquidation-pref').value);
+
+            if (!shareholderId || !shares || !issueDate) {
+                showToast('Please fill in all required fields', 'error');
+                return;
+            }
+
+            setButtonLoading('issue-btn', true);
+
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.ISSUE_SHARES, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        shareholderId,
+                        shares,
+                        issueDate,
+                        dividendRate,
+                        liquidationPref
+                    })
+                });
+
+                if (result.success) {
+                    showToast('Shares issued successfully', 'success');
+                    document.getElementById('issue-form').reset();
+                    document.getElementById('issue-date').valueAsDate = new Date();
+                    loadShareholders();
+                }
+            } catch (error) {
+                console.error('Failed to issue shares:', error);
+            } finally {
+                setButtonLoading('issue-btn', false);
+            }
+        }
+
+        async function transferShares(e) {
+            e.preventDefault();
+            
+            const fromShareholderId = document.getElementById('from-shareholder').value;
+            const toShareholderId = document.getElementById('to-shareholder').value;
+            const shares = parseFloat(document.getElementById('transfer-shares').value);
+
+            if (!fromShareholderId || !toShareholderId || !shares) {
+                showToast('Please fill in all required fields', 'error');
+                return;
+            }
+
+            if (fromShareholderId === toShareholderId) {
+                showToast('Cannot transfer to the same shareholder', 'error');
+                return;
+            }
+
+            setButtonLoading('transfer-btn', true);
+
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.TRANSFER_SHARES, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        fromShareholderId,
+                        toShareholderId,
+                        shares
+                    })
+                });
+
+                if (result.success) {
+                    showToast('Shares transferred successfully', 'success');
+                    document.getElementById('transfer-form').reset();
+                    loadShareholders();
+                }
+            } catch (error) {
+                console.error('Failed to transfer shares:', error);
+            } finally {
+                setButtonLoading('transfer-btn', false);
+            }
+        }
+
+        async function generateStatement() {
+            const shareholderId = document.getElementById('statement-shareholder').value;
+            
+            if (!shareholderId) {
+                showToast('Please select a shareholder', 'error');
+                return;
+            }
+
+            setButtonLoading('generate-statement-btn', true);
+
+            try {
+                const result = await apiRequest(`${API_CONFIG.ENDPOINTS.GET_STATEMENT}?shareholderId=${shareholderId}`);
+                
+                if (result.success) {
+                    const statement = result.data;
+                    document.getElementById('statement-current-shares').textContent = statement.currentShares.toLocaleString();
+                    document.getElementById('statement-annual-dividends').textContent = `$${statement.estimatedAnnualDividends.toFixed(2)}`;
+                    document.getElementById('statement-prorated-dividends').textContent = `$${statement.proratedDividendsToDate.toFixed(2)}`;
+                    document.getElementById('statement-avg-liq-pref').textContent = statement.averageLiquidationPref.toFixed(2);
+                    
+                    // Populate transaction history
+                    const tbody = document.getElementById('statement-transactions');
+                    tbody.innerHTML = '';
+                    statement.transactionHistory.forEach(tx => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50';
+                        row.innerHTML = `
+                            <td class="p-3">${new Date(tx.transactionDate).toLocaleDateString()}</td>
+                            <td class="p-3">
+                                <span class="px-2 py-1 rounded text-xs ${tx.transactionType === 'Issuance' ? 'bg-green-100 text-green-800' : tx.transactionType === 'Transfer In' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}">
+                                    ${tx.transactionType}
+                                </span>
+                            </td>
+                            <td class="p-3 ${tx.shares > 0 ? 'text-green-600' : 'text-red-600'}">${tx.shares > 0 ? '+' : ''}${tx.shares.toLocaleString()}</td>
+                            <td class="p-3">${tx.dividendRate ? (tx.dividendRate * 100).toFixed(2) + '%' : '-'}</td>
+                            <td class="p-3">${tx.liquidationPref ? tx.liquidationPref.toFixed(2) : '-'}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                    
+                    document.getElementById('statement-result').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Failed to generate statement:', error);
+            } finally {
+                setButtonLoading('generate-statement-btn', false);
+            }
+        }
+
+        async function loadOwnership() {
+            const loading = document.getElementById('ownership-loading');
+            const noData = document.getElementById('no-ownership');
+            const table = document.getElementById('ownership-table');
+            
+            loading.classList.remove('hidden');
+            noData.classList.add('hidden');
+            table.innerHTML = '';
+
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_OWNERSHIP);
+                
+                if (result.success && result.data.length > 0) {
+                    table.innerHTML = result.data.map(owner => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="p-3 font-medium">${owner.shareholder}</td>
+                            <td class="p-3">${owner.totalShares.toLocaleString()}</td>
+                            <td class="p-3">${owner.avgDividendRate ? (owner.avgDividendRate * 100).toFixed(2) + '%' : '-'}</td>
+                            <td class="p-3">${owner.avgLiquidationPref ? owner.avgLiquidationPref.toFixed(2) : '-'}</td>
+                            <td class="p-3 font-bold text-green-600">$${owner.estimatedAnnualDividends.toFixed(2)}</td>
+                        </tr>
+                    `).join('');
+                    
+                    loading.classList.add('hidden');
+                } else {
+                    loading.classList.add('hidden');
+                    noData.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Failed to load ownership:', error);
+                loading.classList.add('hidden');
+                noData.classList.remove('hidden');
+            }
+        }
+
+        async function exportCSV() {
+            setButtonLoading('export-csv-btn', true);
+
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.EXPORT_LEDGER);
+                
+                if (result.success) {
+                    // Create CSV download
+                    const csvContent = result.data.csv || convertToCSV(result.data);
+                    const blob = new Blob([csvContent], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'preferred_stock_ledger.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showToast('CSV exported successfully', 'success');
+                }
+            } catch (error) {
+                console.error('Failed to export CSV:', error);
+            } finally {
+                setButtonLoading('export-csv-btn', false);
+            }
+        }
+
+        async function exportExcel() {
+            setButtonLoading('export-excel-btn', true);
+
+            try {
+                // Get ownership data
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_OWNERSHIP);
+                
+                if (result.success) {
+                    // Convert to worksheet
+                    const ws = XLSX.utils.json_to_sheet(result.data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Ownership");
+                    
+                    // Export
+                    XLSX.writeFile(wb, 'stock_ownership.xlsx');
+                    showToast('Excel exported successfully', 'success');
+                }
+            } catch (error) {
+                console.error('Failed to export Excel:', error);
+            } finally {
+                setButtonLoading('export-excel-btn', false);
+            }
+        }
+
+        async function exportPDF() {
+            setButtonLoading('export-pdf-btn', true);
+
+            try {
+                const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_OWNERSHIP);
+                
+                if (result.success) {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    
+                    // Title
+                    doc.setFontSize(20);
+                    doc.text('Preferred Stock Ownership Report', 105, 20, { align: 'center' });
+                    
+                    doc.setFontSize(12);
+                    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 20, 35);
+                    
+                    // Prepare table data
+                    const tableColumn = ["Shareholder", "Total Shares", "Avg. Dividend Rate", "Avg. Liq. Pref", "Est. Annual Dividends"];
+                    const tableRows = result.data.map(owner => [
+                        owner.shareholder,
+                        owner.totalShares.toLocaleString(),
+                        owner.avgDividendRate ? (owner.avgDividendRate * 100).toFixed(2) + '%' : '-',
+                        owner.avgLiquidationPref ? owner.avgLiquidationPref.toFixed(2) : '-',
+                        `$${owner.estimatedAnnualDividends.toFixed(2)}`
+                    ]);
+                    
+                    // Add table
+                    doc.autoTable({
+                        head: [tableColumn],
+                        body: tableRows,
+                        startY: 45,
+                        theme: 'grid',
+                        headStyles: { fillColor: [41, 128, 185] }
+                    });
+                    
+                    // Save PDF
+                    doc.save(`stock_ownership_${new Date().toISOString().split('T')[0]}.pdf`);
+                    showToast('PDF exported successfully', 'success');
+                }
+            } catch (error) {
+                console.error('Failed to export PDF:', error);
+            } finally {
+                setButtonLoading('export-pdf-btn', false);
+            }
+        }
+
+        // ============================================
+        // EXCEL IMPORT FUNCTIONALITY
+        // ============================================
+        function downloadTemplate() {
+            // Create template data
+            const templateData = [
+                {
+                    'CUSIP': 'PYB_PEC',
+                    'TAX-ID': '40-1864606',
+                    'HOLDER REG 1': 'PATIENTTRAC LIMITED',
+                    'TOTAL SHARES': '46307',
+                    'EMAIL ADDRESS': 'wayne@patienttrac.com',
+                    'PHONE NUMBER': '',
+                    'CITY': '',
+                    'STATE': ''
+                }
+            ];
+            
+            const ws = XLSX.utils.json_to_sheet(templateData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Template");
+            XLSX.writeFile(wb, 'shareholder_template.xlsx');
+            showToast('Template downloaded', 'info');
+        }
+
+        async function importExcel() {
+            const fileInput = document.getElementById('excel-file');
+            if (!fileInput.files.length) {
+                showToast('Please select a file first', 'error');
+                return;
+            }
+
+            setButtonLoading('import-btn', true);
+            const file = fileInput.files[0];
+            
+            try {
+                const reader = new FileReader();
+                
+                reader.onload = async function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                    
+                    if (jsonData.length === 0) {
+                        showToast('No data found in file', 'error');
+                        setButtonLoading('import-btn', false);
+                        return;
+                    }
+
+                    // Process and send to API
+                    const result = await apiRequest(API_CONFIG.ENDPOINTS.IMPORT_HOLDERS, {
+                        method: 'POST',
+                        body: JSON.stringify({ holders: jsonData })
+                    });
+
+                    if (result.success) {
+                        document.getElementById('import-success-count').textContent = result.data.successCount || jsonData.length;
+                        document.getElementById('import-failed-count').textContent = result.data.failedCount || 0;
+                        
+                        if (result.data.errors && result.data.errors.length > 0) {
+                            document.getElementById('import-errors').innerHTML = result.data.errors
+                                .map(err => `<p>${err}</p>`)
+                                .join('');
+                        }
+                        
+                        document.getElementById('import-results').classList.remove('hidden');
+                        showToast('Import completed successfully', 'success');
+                        loadShareholders();
+                    }
+                };
+                
+                reader.readAsArrayBuffer(file);
+            } catch (error) {
+                console.error('Import failed:', error);
+                showToast('Import failed. Please check file format.', 'error');
+            } finally {
+                setButtonLoading('import-btn', false);
+            }
+        }
+
+        // Initialize file upload handling
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuth();
+            document.getElementById('issue-date').valueAsDate = new Date();
+            
+            // File upload handling
+            const dropZone = document.getElementById('drop-zone');
+            const fileInput = document.getElementById('excel-file');
+            const fileInfo = document.getElementById('file-info');
+            const fileName = document.getElementById('file-name');
+            
+            dropZone.addEventListener('click', () => fileInput.click());
+            
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-blue-500', 'bg-blue-50');
+            });
+            
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            });
+            
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+                
+                if (e.dataTransfer.files.length) {
+                    fileInput.files = e.dataTransfer.files;
+                    fileName.textContent = e.dataTransfer.files[0].name;
+                    fileInfo.classList.remove('hidden');
+                }
+            });
+            
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length) {
+                    fileName.textContent = fileInput.files[0].name;
+                    fileInfo.classList.remove('hidden');
+                }
+            });
+        });
+
+        // Helper function to convert data to CSV
+        function convertToCSV(data) {
+            if (!data.length) return '';
+            
+            const headers = Object.keys(data[0]);
+            const rows = data.map(row => 
+                headers.map(header => 
+                    JSON.stringify(row[header], (key, value) => 
+                        value === null ? '' : value
+                    )
+                ).join(',')
+            );
+            
+            return [headers.join(','), ...rows].join('\n');
+        }
+    </script>
+</body>
+</html>
