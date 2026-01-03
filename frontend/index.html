@@ -90,12 +90,22 @@
 
   <!-- API Configuration -->
   <script>
-    // Public API prefix (Netlify redirects /api/* -> /.netlify/functions/:splat)
+    // Netlify redirects /api/* -> /.netlify/functions/:splat
+    // IMPORTANT CHANGE: action is now in the QUERY STRING, not the JSON body.
     const API_CONFIG = {
       BASE_URL: '/api',
       ENDPOINTS: {
-        AUTH: '/auth',
-        LEDGER: '/ledger'
+        LOGIN: '/auth?action=login',
+        REGISTER: '/auth?action=register',
+        LOGOUT: '/auth?action=logout',
+
+        ISSUE_SHARES: '/ledger?action=issue',
+        TRANSFER_SHARES: '/ledger?action=transfer',
+        GET_OWNERSHIP: '/ledger?action=ownership',
+        GET_STATEMENT: '/ledger?action=statement',
+        EXPORT_LEDGER: '/ledger?action=export',
+        GET_ALL_HOLDERS: '/ledger?action=holders',
+        IMPORT_HOLDERS: '/ledger?action=import-holders'
       }
     };
   </script>
@@ -562,7 +572,7 @@
     }
 
     // ============================================
-    // API REQUEST (always expects JSON from functions)
+    // API REQUEST (expects JSON from functions)
     // ============================================
     async function apiRequest(endpoint, options = {}) {
       const token = localStorage.getItem('token');
@@ -577,10 +587,7 @@
       console.log('API Request:', { url, method: options.method || 'GET' });
 
       try {
-        const response = await fetch(url, {
-          ...options,
-          headers
-        });
+        const response = await fetch(url, { ...options, headers });
 
         const contentType = response.headers.get('content-type') || '';
         let data;
@@ -649,9 +656,10 @@
       setButtonLoading('login-btn', true);
 
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.AUTH, {
+        // CHANGE: action is in query string
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.LOGIN, {
           method: 'POST',
-          body: JSON.stringify({ action: "login", email, password })
+          body: JSON.stringify({ email, password })
         });
 
         if (result.success) {
@@ -683,9 +691,10 @@
       setButtonLoading('register-btn', true);
 
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.AUTH, {
+        // CHANGE: action is in query string
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.REGISTER, {
           method: 'POST',
-          body: JSON.stringify({ action: "register", name, email, password })
+          body: JSON.stringify({ name, email, password })
         });
 
         if (result.success) {
@@ -693,9 +702,7 @@
           successDiv.classList.remove('hidden');
           showToast('Registration successful!', 'success');
 
-          setTimeout(() => {
-            showLoginPage();
-          }, 1500);
+          setTimeout(() => showLoginPage(), 1500);
         } else {
           errorDiv.textContent = result.error || 'Registration failed';
           errorDiv.classList.remove('hidden');
@@ -708,10 +715,8 @@
     async function logout() {
       setButtonLoading('logout-btn', true);
       try {
-        await apiRequest(API_CONFIG.ENDPOINTS.AUTH, {
-          method: "POST",
-          body: JSON.stringify({ action: "logout" })
-        });
+        // CHANGE: action is in query string
+        await apiRequest(API_CONFIG.ENDPOINTS.LOGOUT, { method: 'POST' });
 
         localStorage.removeItem('token');
         localStorage.removeItem('user');
@@ -744,14 +749,10 @@
     }
 
     // ============================================
-    // SHAREHOLDER MANAGEMENT (ledger action: holders)
+    // SHAREHOLDER MANAGEMENT
     // ============================================
     async function loadShareholders() {
-      const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
-        method: "POST",
-        body: JSON.stringify({ action: "holders" })
-      });
-
+      const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_ALL_HOLDERS);
       if (!result.success) return;
 
       const holders = result.data || [];
@@ -770,11 +771,7 @@
     }
 
     async function loadShareholdersForStatement() {
-      const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
-        method: "POST",
-        body: JSON.stringify({ action: "holders" })
-      });
-
+      const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_ALL_HOLDERS);
       if (!result.success) return;
 
       const holders = result.data || [];
@@ -807,10 +804,9 @@
 
       setButtonLoading('issue-btn', true);
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.ISSUE_SHARES, {
           method: 'POST',
           body: JSON.stringify({
-            action: "issue",
             shareholderId,
             shares,
             issueDate,
@@ -848,10 +844,9 @@
 
       setButtonLoading('transfer-btn', true);
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.TRANSFER_SHARES, {
           method: 'POST',
           body: JSON.stringify({
-            action: "transfer",
             fromShareholderId,
             toShareholderId,
             shares
@@ -877,16 +872,16 @@
 
       setButtonLoading('generate-statement-btn', true);
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
-          method: "POST",
-          body: JSON.stringify({ action: "statement", shareholderId })
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_STATEMENT, {
+          method: 'POST',
+          body: JSON.stringify({ shareholderId })
         });
 
         if (result.success) {
-          const statement = result.data;
+          const statement = result.data || {};
 
           document.getElementById('statement-current-shares').textContent =
-            (statement.currentShares || 0).toLocaleString();
+            Number(statement.currentShares || 0).toLocaleString();
 
           document.getElementById('statement-annual-dividends').textContent =
             `$${Number(statement.estimatedAnnualDividends || 0).toFixed(2)}`;
@@ -932,11 +927,7 @@
       table.innerHTML = '';
 
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
-          method: "POST",
-          body: JSON.stringify({ action: "ownership" })
-        });
-
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_OWNERSHIP);
         if (result.success && Array.isArray(result.data) && result.data.length > 0) {
           table.innerHTML = result.data.map(owner => `
             <tr class="hover:bg-gray-50">
@@ -952,7 +943,7 @@
           loading.classList.add('hidden');
           noData.classList.remove('hidden');
         }
-      } catch (e) {
+      } catch {
         loading.classList.add('hidden');
         noData.classList.remove('hidden');
       }
@@ -961,13 +952,9 @@
     async function exportCSV() {
       setButtonLoading('export-csv-btn', true);
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
-          method: "POST",
-          body: JSON.stringify({ action: "export" })
-        });
-
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.EXPORT_LEDGER);
         if (result.success) {
-          const csvContent = result.data.csv || convertToCSV(result.data);
+          const csvContent = result.data?.csv || convertToCSV(result.data);
           const blob = new Blob([csvContent], { type: 'text/csv' });
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -987,11 +974,7 @@
     async function exportExcel() {
       setButtonLoading('export-excel-btn', true);
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
-          method: "POST",
-          body: JSON.stringify({ action: "ownership" })
-        });
-
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_OWNERSHIP);
         if (result.success) {
           const ws = XLSX.utils.json_to_sheet(result.data || []);
           const wb = XLSX.utils.book_new();
@@ -1007,11 +990,7 @@
     async function exportPDF() {
       setButtonLoading('export-pdf-btn', true);
       try {
-        const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
-          method: "POST",
-          body: JSON.stringify({ action: "ownership" })
-        });
-
+        const result = await apiRequest(API_CONFIG.ENDPOINTS.GET_OWNERSHIP);
         if (result.success) {
           const { jsPDF } = window.jspdf;
           const doc = new jsPDF();
@@ -1086,9 +1065,9 @@
             return;
           }
 
-          const result = await apiRequest(API_CONFIG.ENDPOINTS.LEDGER, {
+          const result = await apiRequest(API_CONFIG.ENDPOINTS.IMPORT_HOLDERS, {
             method: 'POST',
-            body: JSON.stringify({ action: "import-holders", holders: jsonData })
+            body: JSON.stringify({ holders: jsonData })
           });
 
           if (result.success) {
