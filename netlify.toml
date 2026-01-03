@@ -5,11 +5,25 @@
 [functions]
   directory = "api/netlify-functions"
 
+# Handle CORS preflight cleanly
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+  force = true
+  conditions = { method = ["OPTIONS"] }
+
+# Normal API routing
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
 
+# SPA fallback (only needed if you have client-side routes)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
 
 [[headers]]
   for = "/*"
@@ -24,3 +38,4 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Headers = "Authorization, Content-Type"
     Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+
