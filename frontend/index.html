@@ -627,7 +627,7 @@ async function apiRequest(endpoint, options = {}) {
             try {
                 const result = await apiRequest(API_CONFIG.ENDPOINTS.LOGIN, {
                     method: 'POST',
-                    body: JSON.stringify({ email, password })
+                    body: JSON.stringify({ action: "login", email, password })
                 });
 
                 if (result.success) {
@@ -663,7 +663,7 @@ async function apiRequest(endpoint, options = {}) {
             try {
                 const result = await apiRequest(API_CONFIG.ENDPOINTS.REGISTER, {
                     method: 'POST',
-                    body: JSON.stringify({ name, email, password })
+                    body: JSON.stringify({ action: "register", name, email, password })
                 });
 
                 if (result.success) {
@@ -686,21 +686,27 @@ async function apiRequest(endpoint, options = {}) {
             }
         }
 
-        async function logout() {
-            setButtonLoading('logout-btn', true);
+            async function logout() {
+              setButtonLoading('logout-btn', true);
             
-            try {
-                await apiRequest(API_CONFIG.ENDPOINTS.LOGOUT);
+              try {
+                await apiRequest(API_CONFIG.ENDPOINTS.LOGOUT, {
+                  method: "POST",
+                  body: JSON.stringify({ action: "logout" })
+                });
+            
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
                 currentUser = null;
+            
                 showToast('Logged out successfully', 'info');
                 document.getElementById('auth-container').classList.remove('hidden');
                 document.getElementById('app-container').classList.add('hidden');
-            } catch (error) {
+              } catch (error) {
                 showToast('Logout failed', 'error');
-            } finally {
+              } finally {
                 setButtonLoading('logout-btn', false);
+              }
             }
         }
 
