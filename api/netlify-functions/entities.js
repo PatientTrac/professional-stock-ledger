@@ -1,387 +1,250 @@
 const { query } = require('./utils/db');
 const { authMiddleware, requireRole } = require('./middleware/auth');
 
-exports.handler = async (event, context) => {
-    // Parse query parameters
-    const params = event.queryStringParameters || {};
-    const { action } = params;
-    
-    console.log(`Entities ${action} request:`, { 
-        method: event.httpMethod, 
-        action
-    });
+function json(statusCode, body, extraHeaders = {}) {
+  return {
+    statusCode,
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
+    body: JSON.stringify(body),
+  };
+}
 
-    // Route the request
-    switch (event.httpMethod) {
-        case 'POST':
-            if (action === 'create') {
-                return await handleCreateEntity(event);
-            }
-            break;
-            
-        case 'GET':
-            if (action === 'list') {
-                return await handleListEntities(event);
-            } else if (action === 'get') {
-                return await handleGetEntity(event, params);
-            }
-            break;
-            
-        case 'PUT':
-            if (action === 'update') {
-                return await handleUpdateEntity(event);
-            }
-            break;
+exports.handler = async (event) => {
+  const params = event.queryStringParameters || {};
+  const action = params.action;
+
+  console.log('ENTITIES:', { method: event.httpMethod, action });
+
+  try {
+    if (event.httpMethod === 'GET') {
+      if (action === 'list') return await handleListEntities(event, params);
+      if (action === 'get') return await handleGetEntity(event, params);
+      return json(400, { success: false, error: 'Invalid action or method' });
     }
-    
-    return {
-        statusCode: 400,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            success: false,
-            error: 'Invalid action or method' 
-        })
-    };
+
+    if (event.httpMethod === 'POST') {
+      if (action === 'create') return await handleCreateEntity(event);
+      return json(400, { success: false, error: 'Invalid action or method' });
+    }
+
+    if (event.httpMethod === 'PUT') {
+      if (action === 'update') return await handleUpdateEntity(event);
+      return json(400, { success: false, error: 'Invalid action or method' });
+    }
+
+    return json(405, { success: false, error: 'Method not allowed' });
+  } catch (e) {
+    console.error('ENTITIES ERROR:', e);
+    return json(500, { success: false, error: 'Server error: ' + e.message });
+  }
 };
 
+function parseBody(event) {
+  if (!event.body) return {};
+  try { return JSON.parse(event.body); }
+  catch { throw new Error('Invalid JSON in request body'); }
+}
+
+// -----------------------------------
+// POST create (SUPER_ADMIN only)
+// -----------------------------------
 async function handleCreateEntity(event) {
-    // Authenticate request
-    const auth = await authMiddleware(event);
-    if (auth.statusCode) return auth;
-    
-    const { user, headers } = auth;
-    
-    // Only SUPER_ADMIN can create entities
-    if (!requireRole(['SUPER_ADMIN'])(user)) {
-        return {
-            statusCode: 403,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Forbidden: Only SUPER_ADMIN can create entities'
-            })
-        };
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  if (!requireRole(['SUPER_ADMIN'])(user)) {
+    return json(403, { success:false, error:'Forbidden: Only SUPER_ADMIN can create entities' }, headers);
+  }
+
+  const body = parseBody(event);
+  const {
+    name,
+    legal_name,
+    tax_id,
+    address,
+    city,
+    state,
+    country,
+    zip_code,
+    phone,
+    email
+  } = body;
+
+  if (!name) return json(400, { success:false, error:'Entity name is required' }, headers);
+
+  try {
+    const existing = await query('SELECT id FROM entities WHERE name = $1', [name]);
+    if (existing.rows.length) {
+      return json(409, { success:false, error:'Entity already exists' }, headers);
     }
-    
-    const body = JSON.parse(event.body || '{}');
-    const { name, legal_name, tax_id, address, city, state, country, zip_code, phone, email } = body;
-    
-    if (!name) {
-        return {
-            statusCode: 400,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Entity name is required'
-            })
-        };
-    }
-    
-    try {
-        // Check if entity already exists
-        const existingEntity = await query(
-            'SELECT id FROM entities WHERE name = $1',
-            [name]
-        );
-        
-        if (existingEntity.rows.length > 0) {
-            return {
-                statusCode: 409,
-                headers,
-                body: JSON.stringify({ 
-                    success: false,
-                    error: 'Entity already exists'
-                })
-            };
-        }
-        
-        // Create entity
-        const result = await query(`
-            INSERT INTO entities (
-                name, legal_name, tax_id, address, city, 
-                state, country, zip_code, phone, email, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING *
-        `, [
-            name,
-            legal_name || name,
-            tax_id,
-            address,
-            city,
-            state,
-            country || 'US',
-            zip_code,
-            phone,
-            email,
-            true
-        ]);
-        
-        return {
-            statusCode: 201,
-            headers,
-            body: JSON.stringify({
-                success: true,
-                entity: result.rows[0]
-            })
-        };
-    } catch (error) {
-        console.error('Create entity error:', error);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Failed to create entity: ' + error.message
-            })
-        };
-    }
+
+    const result = await query(
+      `
+      INSERT INTO entities (
+        name, legal_name, tax_id, address, city,
+        state, country, zip_code, phone, email, is_active
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE)
+      RETURNING *
+      `,
+      [
+        name,
+        legal_name || name,
+        tax_id || null,
+        address || null,
+        city || null,
+        state || null,
+        country || 'US',
+        zip_code || null,
+        phone || null,
+        email || null,
+      ]
+    );
+
+    return json(201, { success:true, entity: result.rows[0] }, headers);
+  } catch (e) {
+    console.error('Create entity error:', e);
+    return json(500, { success:false, error:'Failed to create entity: ' + e.message }, headers);
+  }
 }
 
-async function handleListEntities(event) {
-    // Authenticate request
-    const auth = await authMiddleware(event);
-    if (auth.statusCode) return auth;
-    
-    const { user, headers } = auth;
-    
-    try {
-        let queryText = `
-            SELECT id, name, legal_name, tax_id, is_active,
-                   address, city, state, country, zip_code,
-                   phone, email, created_at, updated_at
-            FROM entities
-            WHERE is_active = TRUE
-        `;
-        
-        const queryParams = [];
-        
-        // SUPER_ADMIN can see all entities, others only see their assigned entity
-        if (user.role !== 'SUPER_ADMIN') {
-            queryText += ' AND id = $1';
-            queryParams.push(user.entity_id);
-        }
-        
-        queryText += ' ORDER BY name';
-        
-        const result = await query(queryText, queryParams);
-        
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                success: true,
-                entities: result.rows
-            })
-        };
-    } catch (error) {
-        console.error('List entities error:', error);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Failed to list entities: ' + error.message
-            })
-        };
+// -----------------------------------
+// GET list
+// - SUPER_ADMIN: all entities (optionally include_inactive=true)
+// - others: only their entity
+// -----------------------------------
+async function handleListEntities(event, params) {
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  const includeInactive = params.include_inactive === 'true';
+
+  try {
+    let q = `
+      SELECT id, name, legal_name, tax_id, is_active,
+             address, city, state, country, zip_code,
+             phone, email, created_at, updated_at
+      FROM entities
+      WHERE 1=1
+    `;
+    const qParams = [];
+    let i = 0;
+
+    // Non-super admins only see their own entity
+    if (user.role !== 'SUPER_ADMIN') {
+      i++;
+      q += ` AND id = $${i}`;
+      qParams.push(user.entity_id);
+    } else {
+      // SUPER_ADMIN can see all. default: active only unless includeInactive=true
+      if (!includeInactive) {
+        q += ` AND is_active = TRUE`;
+      }
     }
+
+    q += ` ORDER BY name`;
+
+    const result = await query(q, qParams);
+    return json(200, { success:true, entities: result.rows }, headers);
+  } catch (e) {
+    console.error('List entities error:', e);
+    return json(500, { success:false, error:'Failed to list entities: ' + e.message }, headers);
+  }
 }
 
+// -----------------------------------
+// GET get&entityId=
+// -----------------------------------
 async function handleGetEntity(event, params) {
-    // Authenticate request
-    const auth = await authMiddleware(event);
-    if (auth.statusCode) return auth;
-    
-    const { user, headers } = auth;
-    
-    const { entityId } = params;
-    
-    if (!entityId) {
-        return {
-            statusCode: 400,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Entity ID is required'
-            })
-        };
-    }
-    
-    // Check if user has access to this entity
-    if (user.role !== 'SUPER_ADMIN' && user.entity_id !== parseInt(entityId)) {
-        return {
-            statusCode: 403,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Forbidden: Cannot access this entity'
-            })
-        };
-    }
-    
-    try {
-        const result = await query(`
-            SELECT id, name, legal_name, tax_id, is_active,
-                   address, city, state, country, zip_code,
-                   phone, email, created_at, updated_at
-            FROM entities
-            WHERE id = $1
-        `, [entityId]);
-        
-        if (result.rows.length === 0) {
-            return {
-                statusCode: 404,
-                headers,
-                body: JSON.stringify({ 
-                    success: false,
-                    error: 'Entity not found'
-                })
-            };
-        }
-        
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                success: true,
-                entity: result.rows[0]
-            })
-        };
-    } catch (error) {
-        console.error('Get entity error:', error);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Failed to get entity: ' + error.message
-            })
-        };
-    }
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  const { entityId } = params;
+  if (!entityId) return json(400, { success:false, error:'Entity ID is required' }, headers);
+
+  // Non-super admins can only access their entity
+  if (user.role !== 'SUPER_ADMIN' && String(user.entity_id) !== String(entityId)) {
+    return json(403, { success:false, error:'Forbidden: Cannot access this entity' }, headers);
+  }
+
+  try {
+    const result = await query(
+      `
+      SELECT id, name, legal_name, tax_id, is_active,
+             address, city, state, country, zip_code,
+             phone, email, created_at, updated_at
+      FROM entities
+      WHERE id = $1
+      `,
+      [entityId]
+    );
+
+    if (!result.rows.length) return json(404, { success:false, error:'Entity not found' }, headers);
+
+    return json(200, { success:true, entity: result.rows[0] }, headers);
+  } catch (e) {
+    console.error('Get entity error:', e);
+    return json(500, { success:false, error:'Failed to get entity: ' + e.message }, headers);
+  }
 }
 
+// -----------------------------------
+// PUT update (SUPER_ADMIN only)
+// -----------------------------------
 async function handleUpdateEntity(event) {
-    // Authenticate request
-    const auth = await authMiddleware(event);
-    if (auth.statusCode) return auth;
-    
-    const { user, headers } = auth;
-    
-    // Only SUPER_ADMIN can update entities
-    if (!requireRole(['SUPER_ADMIN'])(user)) {
-        return {
-            statusCode: 403,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Forbidden: Only SUPER_ADMIN can update entities'
-            })
-        };
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  if (!requireRole(['SUPER_ADMIN'])(user)) {
+    return json(403, { success:false, error:'Forbidden: Only SUPER_ADMIN can update entities' }, headers);
+  }
+
+  const body = parseBody(event);
+  const { entityId, ...updates } = body;
+
+  if (!entityId) return json(400, { success:false, error:'Entity ID is required' }, headers);
+
+  const allowedFields = new Set([
+    'name','legal_name','tax_id','address','city','state','country','zip_code','phone','email','is_active'
+  ]);
+
+  const keys = Object.keys(updates).filter(k => allowedFields.has(k));
+  if (!keys.length) return json(400, { success:false, error:'No valid fields to update' }, headers);
+
+  try {
+    const check = await query('SELECT id FROM entities WHERE id = $1', [entityId]);
+    if (!check.rows.length) return json(404, { success:false, error:'Entity not found' }, headers);
+
+    const sets = [];
+    const paramsArr = [];
+    let i = 0;
+
+    for (const k of keys) {
+      i++;
+      sets.push(`${k} = $${i}`);
+      paramsArr.push(updates[k]);
     }
-    
-    const body = JSON.parse(event.body || '{}');
-    const { entityId, ...updates } = body;
-    
-    if (!entityId) {
-        return {
-            statusCode: 400,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Entity ID is required'
-            })
-        };
-    }
-    
-    if (Object.keys(updates).length === 0) {
-        return {
-            statusCode: 400,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'No fields to update'
-            })
-        };
-    }
-    
-    try {
-        // Check if entity exists
-        const checkResult = await query(
-            'SELECT id FROM entities WHERE id = $1',
-            [entityId]
-        );
-        
-        if (checkResult.rows.length === 0) {
-            return {
-                statusCode: 404,
-                headers,
-                body: JSON.stringify({ 
-                    success: false,
-                    error: 'Entity not found'
-                })
-            };
-        }
-        
-        // Build update query
-        const updateFields = [];
-        const params = [];
-        let paramCount = 0;
-        
-        const allowedFields = [
-            'name', 'legal_name', 'tax_id', 'address', 'city',
-            'state', 'country', 'zip_code', 'phone', 'email', 'is_active'
-        ];
-        
-        for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields.includes(key)) {
-                paramCount++;
-                updateFields.push(`${key} = $${paramCount}`);
-                params.push(value);
-            }
-        }
-        
-        if (updateFields.length === 0) {
-            return {
-                statusCode: 400,
-                headers,
-                body: JSON.stringify({ 
-                    success: false,
-                    error: 'No valid fields to update'
-                })
-            };
-        }
-        
-        paramCount++;
-        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-        
-        paramCount++;
-        params.push(entityId);
-        
-        const updateQuery = `
-            UPDATE entities 
-            SET ${updateFields.join(', ')}
-            WHERE id = $${paramCount}
-            RETURNING *
-        `;
-        
-        const result = await query(updateQuery, params);
-        
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                success: true,
-                entity: result.rows[0]
-            })
-        };
-    } catch (error) {
-        console.error('Update entity error:', error);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ 
-                success: false,
-                error: 'Failed to update entity: ' + error.message
-            })
-        };
-    }
+
+    sets.push(`updated_at = CURRENT_TIMESTAMP`);
+
+    i++;
+    paramsArr.push(entityId);
+
+    const q = `
+      UPDATE entities
+      SET ${sets.join(', ')}
+      WHERE id = $${i}
+      RETURNING *
+    `;
+
+    const result = await query(q, paramsArr);
+    return json(200, { success:true, entity: result.rows[0] }, headers);
+  } catch (e) {
+    console.error('Update entity error:', e);
+    return json(500, { success:false, error:'Failed to update entity: ' + e.message }, headers);
+  }
 }
