@@ -18,6 +18,8 @@
     .toast.info{background:#2563eb}
     .btn-loader{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,.35);border-radius:50%;border-top-color:#fff;animation:spin 1s linear infinite}
     @keyframes spin { to { transform: rotate(360deg); } }
+    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998}
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
   </style>
 </head>
 
@@ -25,11 +27,21 @@
   <div id="toast-container"></div>
 
   <script>
+    // =========================
+    // CONFIG
+    // =========================
     const API_CONFIG = {
       BASE_URL: '/api',
-      ENDPOINTS: { AUTH: '/auth' }
+      ENDPOINTS: {
+        AUTH: '/auth',
+        LEDGER: '/ledger',
+        ENTITIES: '/entities' // optional function; we try it and gracefully fallback if not present
+      }
     };
 
+    // =========================
+    // UI HELPERS
+    // =========================
     function showToast(message, type='info', duration=3000){
       const c=document.getElementById('toast-container');
       const t=document.createElement('div');
@@ -47,8 +59,44 @@
       if(loader) loader.classList.toggle('hidden', !isLoading);
     }
 
-    async function apiRequest(action, payload = null) {
-      const token = localStorage.getItem('token');
+    function qs(obj){
+      const params = new URLSearchParams();
+      Object.entries(obj || {}).forEach(([k,v])=>{
+        if(v === undefined || v === null || v === '') return;
+        params.set(k, String(v));
+      });
+      return params.toString();
+    }
+
+    function openModal(id){
+      document.getElementById(id).classList.remove('hidden');
+    }
+    function closeModal(id){
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    // =========================
+    // STORAGE + SESSION
+    // =========================
+    function getToken(){ return localStorage.getItem('token'); }
+    function getUser(){
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    }
+    function setSession(token, user){
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+    }
+    function clearSession(){
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
+
+    // =========================
+    // API HELPERS
+    // =========================
+    async function authRequest(action, payload = null) {
+      const token = getToken();
       const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AUTH}?action=${encodeURIComponent(action)}`;
 
       const res = await fetch(url, {
@@ -57,7 +105,7 @@
           'Content-Type':'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
-        body: payload ? JSON.stringify(payload) : JSON.stringify({})
+        body: JSON.stringify(payload || {})
       });
 
       const ct = res.headers.get('content-type') || '';
@@ -69,6 +117,71 @@
       return data;
     }
 
+    // Ledger: supports GET (recommended for your current ledger.js) and POST (for create/issue/transfer/cancel)
+    async function ledgerGet(action, params = {}) {
+      const token = getToken();
+      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LEDGER}?${qs({ action, ...params })}`;
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || data.message || `Request failed (${res.status})`);
+      }
+      return data;
+    }
+
+    async function ledgerPost(action, payload = {}) {
+      const token = getToken();
+      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LEDGER}?action=${encodeURIComponent(action)}`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type':'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(payload || {})
+      });
+
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
+
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || data.message || `Request failed (${res.status})`);
+      }
+      return data;
+    }
+
+    // Entities (optional endpoint). If missing, we fallback to user's entity only.
+    async function entitiesList() {
+      const token = getToken();
+      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENTITIES}?${qs({ action: 'list' })}`;
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
+      });
+
+      // if function doesn't exist, Netlify may return HTML / 404; treat as "not available"
+      const ct = res.headers.get('content-type') || '';
+      if (!res.ok || !ct.includes('application/json')) return null;
+
+      const data = await res.json();
+      if (data.success === false) return null;
+      return data;
+    }
+
+    // =========================
+    // AUTH UI
+    // =========================
     function showLoginPage(){
       document.getElementById('login-page').classList.remove('hidden');
       document.getElementById('register-page').classList.add('hidden');
@@ -85,14 +198,12 @@
         const email=document.getElementById('login-email').value;
         const password=document.getElementById('login-password').value;
 
-        const data = await apiRequest('login', { email, password });
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        const data = await authRequest('login', { email, password });
+        setSession(data.token, data.user);
 
         showToast('Login successful', 'success');
-        document.getElementById('auth-container').classList.add('hidden');
-        document.getElementById('app-container').classList.remove('hidden');
-        document.getElementById('username').textContent = data.user.full_name || data.user.email || '';
+        showApp();
+        await initApp();
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
@@ -108,16 +219,14 @@
         const email=document.getElementById('register-email').value;
         const password=document.getElementById('register-password').value;
 
-        const data = await apiRequest('register', { full_name, email, password });
+        const data = await authRequest('register', { full_name, email, password });
 
         // auto-login if token returned
         if (data.token) {
-          localStorage.setItem('token', data.token);
-          localStorage.setItem('user', JSON.stringify(data.user));
+          setSession(data.token, data.user);
           showToast('Registered + logged in!', 'success');
-          document.getElementById('auth-container').classList.add('hidden');
-          document.getElementById('app-container').classList.remove('hidden');
-          document.getElementById('username').textContent = data.user.full_name || data.user.email || '';
+          showApp();
+          await initApp();
         } else {
           showToast('Registration successful. Please login.', 'success');
           showLoginPage();
@@ -131,29 +240,399 @@
 
     async function logout(){
       setButtonLoading('logout-btn', true);
+      try { await authRequest('logout', {}); } catch(_) {}
+      clearSession();
+      showAuth();
+      showToast('Logged out', 'info');
+      setButtonLoading('logout-btn', false);
+    }
+
+    function showApp(){
+      const u = getUser();
+      document.getElementById('auth-container').classList.add('hidden');
+      document.getElementById('app-container').classList.remove('hidden');
+      document.getElementById('username').textContent = u?.full_name || u?.email || '';
+    }
+
+    function showAuth(){
+      document.getElementById('app-container').classList.add('hidden');
+      document.getElementById('auth-container').classList.remove('hidden');
+    }
+
+    // =========================
+    // SHAREHOLDER GRID (Ownership)
+    // =========================
+    let appState = {
+      entities: [],
+      selectedEntityId: '',
+      selectedStockType: '',
+      selectedSeries: '',
+      selectedStatus: 'ACTIVE',
+      search: ''
+    };
+
+    function isSuperAdmin(){
+      const u = getUser();
+      return (u?.role || '').toUpperCase() === 'SUPER_ADMIN';
+    }
+
+    async function loadEntityDropdown(){
+      const u = getUser();
+      const entitySelectWrap = document.getElementById('entity-filter-wrap');
+      const entitySelect = document.getElementById('filter-entity');
+
+      if (!isSuperAdmin()) {
+        // hide entity dropdown and force user's entity
+        entitySelectWrap.classList.add('hidden');
+        appState.selectedEntityId = u?.entity_id ? String(u.entity_id) : '';
+        return;
+      }
+
+      entitySelectWrap.classList.remove('hidden');
+
+      // Try entities function
+      const data = await entitiesList();
+      if (data && Array.isArray(data.entities)) {
+        appState.entities = data.entities;
+      } else {
+        // fallback to just user's entity
+        appState.entities = [{
+          id: u?.entity_id,
+          name: u?.entity_name || `Entity ${u?.entity_id}`,
+          is_active: true
+        }];
+      }
+
+      entitySelect.innerHTML = '';
+      appState.entities.forEach(ent=>{
+        const opt = document.createElement('option');
+        opt.value = String(ent.id);
+        opt.textContent = ent.name || `Entity ${ent.id}`;
+        entitySelect.appendChild(opt);
+      });
+
+      // default to first
+      appState.selectedEntityId = entitySelect.value || (u?.entity_id ? String(u.entity_id) : '');
+    }
+
+    function fillSeriesOptionsFromRows(rows){
+      const seriesSelect = document.getElementById('filter-series');
+      const stockType = appState.selectedStockType;
+
+      // Only show series when Preferred chosen
+      if (stockType !== 'PREFERRED') {
+        seriesSelect.value = '';
+        seriesSelect.disabled = true;
+        seriesSelect.innerHTML = `<option value="">Series (n/a)</option>`;
+        appState.selectedSeries = '';
+        return;
+      }
+
+      // Find distinct series
+      const set = new Set();
+      (rows || []).forEach(r=>{
+        if (r.series) set.add(String(r.series));
+      });
+
+      const list = Array.from(set).sort((a,b)=>a.localeCompare(b));
+      seriesSelect.disabled = false;
+      seriesSelect.innerHTML = `<option value="">All Series</option>` + list.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    }
+
+    function escapeHtml(s){
+      return String(s)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'","&#039;");
+    }
+
+    async function refreshShareholderGrid(){
+      const loading = document.getElementById('grid-loading');
+      const empty = document.getElementById('grid-empty');
+      const tbody = document.getElementById('grid-body');
+      const u = getUser();
+
+      loading.classList.remove('hidden');
+      empty.classList.add('hidden');
+      tbody.innerHTML = '';
+
       try {
-        await apiRequest('logout', {});
-      } catch(_) {
-        // even if API fails, still clear local session
-      } finally {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        document.getElementById('app-container').classList.add('hidden');
-        document.getElementById('auth-container').classList.remove('hidden');
-        showToast('Logged out', 'info');
-        setButtonLoading('logout-btn', false);
+        // We use ownership because it supports stock_type + series + status logic
+        const params = {
+          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : ''),
+          stock_type: appState.selectedStockType,
+          series: appState.selectedSeries,
+          status: appState.selectedStatus
+        };
+
+        const data = await ledgerGet('ownership', params);
+        const rows = Array.isArray(data.ownership) ? data.ownership : [];
+
+        fillSeriesOptionsFromRows(rows);
+
+        // Client-side search (by name/email/tax_id)
+        const q = (appState.search || '').trim().toLowerCase();
+        const filtered = q
+          ? rows.filter(r => (
+              String(r.full_name || '').toLowerCase().includes(q) ||
+              String(r.email || '').toLowerCase().includes(q) ||
+              String(r.tax_id || '').toLowerCase().includes(q)
+            ))
+          : rows;
+
+        renderShareholderGrid(filtered);
+        loading.classList.add('hidden');
+
+        if (!filtered.length) empty.classList.remove('hidden');
+      } catch (e) {
+        loading.classList.add('hidden');
+        empty.classList.remove('hidden');
+        showToast(e.message || 'Failed to load grid', 'error');
       }
     }
 
-    // Initialize
-    document.addEventListener('DOMContentLoaded', () => {
-      const token = localStorage.getItem('token');
-      const user = localStorage.getItem('user');
+    function renderShareholderGrid(rows){
+      const tbody = document.getElementById('grid-body');
+      tbody.innerHTML = (rows || []).map(r=>{
+        const statusPill = (r.status || '').toUpperCase() === 'ACTIVE'
+          ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">ACTIVE</span>`
+          : `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">INACTIVE</span>`;
+
+        const stockPill = (r.stock_type || '').toUpperCase() === 'PREFERRED'
+          ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">PREFERRED</span>`
+          : `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">COMMON</span>`;
+
+        const shares = Number(r.current_shares || 0);
+        const sharesFmt = isFinite(shares) ? shares.toLocaleString() : '0';
+
+        return `
+          <tr class="hover:bg-gray-50">
+            <td class="p-3 font-semibold text-gray-900">${escapeHtml(r.full_name || '')}</td>
+            <td class="p-3 text-gray-700">${escapeHtml(r.email || '')}</td>
+            <td class="p-3 text-gray-700">${escapeHtml(r.shareholder_type || '')}</td>
+            <td class="p-3">${stockPill}</td>
+            <td class="p-3 text-gray-700">${escapeHtml(r.series || (r.stock_type === 'PREFERRED' ? '' : '-'))}</td>
+            <td class="p-3 font-semibold text-gray-900">${sharesFmt}</td>
+            <td class="p-3">${statusPill}</td>
+            <td class="p-3 text-right">
+              <button class="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-black"
+                onclick="openActions('${String(r.shareholder_id || r.id || '')}','${escapeHtml(r.full_name || '')}','${escapeHtml(r.stock_type || '')}','${escapeHtml(r.series || '')}')">
+                Actions
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // =========================
+    // ACTIONS (Dialogs)
+    // =========================
+    let selectedRow = { shareholder_id:'', full_name:'', stock_type:'', series:'' };
+
+    function openActions(shareholderId, fullName, stockType, series){
+      selectedRow = {
+        shareholder_id: shareholderId,
+        full_name: fullName,
+        stock_type: (stockType || '').toUpperCase(),
+        series: series || ''
+      };
+      document.getElementById('actions-title').textContent =
+        `Actions for: ${selectedRow.full_name || 'Shareholder'}`;
+
+      // prefill common fields
+      document.getElementById('issue-shareholder-id').value = selectedRow.shareholder_id || '';
+      document.getElementById('issue-stock-type').value = selectedRow.stock_type || 'COMMON';
+      document.getElementById('issue-series').value = selectedRow.series || '';
+      document.getElementById('issue-date').valueAsDate = new Date();
+
+      document.getElementById('transfer-from-shareholder-id').value = selectedRow.shareholder_id || '';
+      document.getElementById('transfer-stock-type').value = selectedRow.stock_type || 'COMMON';
+      document.getElementById('transfer-series').value = selectedRow.series || '';
+      document.getElementById('transfer-date').valueAsDate = new Date();
+
+      document.getElementById('cancel-shareholder-id').value = selectedRow.shareholder_id || '';
+      document.getElementById('cancel-stock-type').value = selectedRow.stock_type || 'COMMON';
+      document.getElementById('cancel-series').value = selectedRow.series || '';
+      document.getElementById('cancel-date').valueAsDate = new Date();
+
+      openModal('modal-actions');
+    }
+
+    function openIssue(){
+      closeModal('modal-actions');
+      openModal('modal-issue');
+    }
+    function openTransfer(){
+      closeModal('modal-actions');
+      openModal('modal-transfer');
+    }
+    function openCancel(){
+      closeModal('modal-actions');
+      openModal('modal-cancel');
+    }
+    function openReverseSplit(){
+      showToast('Reverse Split dialog is next (we will implement server-side logic + audit trail)', 'info', 4500);
+    }
+    function openReissue(){
+      showToast('Reissue dialog is next (we will implement certificate reissue + linking)', 'info', 4500);
+    }
+
+    async function submitIssue(e){
+      e.preventDefault();
+      setButtonLoading('issue-btn', true);
+      try {
+        const u = getUser();
+        const payload = {
+          shareholder_id: document.getElementById('issue-shareholder-id').value,
+          transaction_date: document.getElementById('issue-date').value,
+          stock_type: document.getElementById('issue-stock-type').value,
+          series: document.getElementById('issue-series').value || null,
+          shares: document.getElementById('issue-shares').value,
+          certificate_number: document.getElementById('issue-cert').value || null,
+          notes: document.getElementById('issue-notes').value || null,
+          // SUPER_ADMIN can choose entity via dropdown; others use own entity on server
+          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : '')
+        };
+
+        await ledgerPost('issue-shares', payload);
+        showToast('Shares issued', 'success');
+        closeModal('modal-issue');
+        await refreshShareholderGrid();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        setButtonLoading('issue-btn', false);
+      }
+    }
+
+    async function submitTransfer(e){
+      e.preventDefault();
+      setButtonLoading('transfer-btn', true);
+      try {
+        const u = getUser();
+        const payload = {
+          from_shareholder_id: document.getElementById('transfer-from-shareholder-id').value,
+          to_shareholder_id: document.getElementById('transfer-to-shareholder-id').value,
+          transaction_date: document.getElementById('transfer-date').value,
+          stock_type: document.getElementById('transfer-stock-type').value,
+          series: document.getElementById('transfer-series').value || null,
+          shares: document.getElementById('transfer-shares').value,
+          certificate_number: document.getElementById('transfer-cert').value || null,
+          notes: document.getElementById('transfer-notes').value || null,
+          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : '')
+        };
+
+        await ledgerPost('transfer-shares', payload);
+        showToast('Shares transferred', 'success');
+        closeModal('modal-transfer');
+        await refreshShareholderGrid();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        setButtonLoading('transfer-btn', false);
+      }
+    }
+
+    async function submitCancel(e){
+      e.preventDefault();
+      setButtonLoading('cancel-btn', true);
+      try {
+        const u = getUser();
+        const payload = {
+          shareholder_id: document.getElementById('cancel-shareholder-id').value,
+          transaction_date: document.getElementById('cancel-date').value,
+          stock_type: document.getElementById('cancel-stock-type').value,
+          series: document.getElementById('cancel-series').value || null,
+          shares: document.getElementById('cancel-shares').value,
+          certificate_number: document.getElementById('cancel-cert').value || null,
+          notes: document.getElementById('cancel-notes').value || null,
+          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : '')
+        };
+
+        await ledgerPost('cancel-shares', payload);
+        showToast('Shares cancelled', 'success');
+        closeModal('modal-cancel');
+        await refreshShareholderGrid();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        setButtonLoading('cancel-btn', false);
+      }
+    }
+
+    // =========================
+    // INIT
+    // =========================
+    async function initApp(){
+      const u = getUser();
+      if (!u) return;
+
+      // Entity dropdown (SUPER_ADMIN only)
+      await loadEntityDropdown();
+
+      // default filters
+      document.getElementById('filter-stock-type').value = '';
+      document.getElementById('filter-status').value = 'ACTIVE';
+      document.getElementById('filter-series').disabled = true;
+
+      // Bind events
+      document.getElementById('filter-stock-type').addEventListener('change', async (e)=>{
+        appState.selectedStockType = e.target.value;
+        appState.selectedSeries = '';
+        document.getElementById('filter-series').value = '';
+        await refreshShareholderGrid();
+      });
+
+      document.getElementById('filter-series').addEventListener('change', async (e)=>{
+        appState.selectedSeries = e.target.value;
+        await refreshShareholderGrid();
+      });
+
+      document.getElementById('filter-status').addEventListener('change', async (e)=>{
+        appState.selectedStatus = e.target.value;
+        await refreshShareholderGrid();
+      });
+
+      const searchInput = document.getElementById('filter-search');
+      let searchTimer = null;
+      searchInput.addEventListener('input', ()=>{
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(async ()=>{
+          appState.search = searchInput.value;
+          await refreshShareholderGrid();
+        }, 200);
+      });
+
+      const entitySelect = document.getElementById('filter-entity');
+      entitySelect.addEventListener('change', async (e)=>{
+        appState.selectedEntityId = e.target.value;
+        await refreshShareholderGrid();
+      });
+
+      // Set selected entity (if dropdown exists and visible)
+      if (isSuperAdmin()) {
+        const entitySelect = document.getElementById('filter-entity');
+        appState.selectedEntityId = entitySelect.value || appState.selectedEntityId;
+      }
+
+      appState.selectedStockType = document.getElementById('filter-stock-type').value;
+      appState.selectedStatus = document.getElementById('filter-status').value;
+      appState.search = '';
+
+      await refreshShareholderGrid();
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const token = getToken();
+      const user = getUser();
       if (token && user) {
-        const u = JSON.parse(user);
-        document.getElementById('auth-container').classList.add('hidden');
-        document.getElementById('app-container').classList.remove('hidden');
-        document.getElementById('username').textContent = u.full_name || u.email || '';
+        showApp();
+        await initApp();
+      } else {
+        showAuth();
       }
     });
   </script>
@@ -216,9 +695,295 @@
       </div>
     </nav>
 
-    <div class="p-6">
-      <p class="text-gray-700">Auth is working. Next: connect ledger UI.</p>
+    <div class="max-w-7xl mx-auto p-6 space-y-4">
+      <!-- Filters -->
+      <div class="bg-white rounded-2xl shadow p-5">
+        <div class="flex flex-col gap-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+              <div class="text-lg font-bold text-gray-900">Shareholder Grid</div>
+              <div class="text-sm text-gray-500">Ownership view (by stock type / series)</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="refreshShareholderGrid()"
+                class="px-4 py-2 rounded-lg bg-gray-900 text-white font-semibold hover:bg-black">
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div id="entity-filter-wrap" class="md:col-span-3 hidden">
+              <label class="text-xs font-semibold text-gray-600">Entity</label>
+              <select id="filter-entity" class="w-full mt-1 p-2.5 border rounded-lg">
+              </select>
+            </div>
+
+            <div class="md:col-span-3">
+              <label class="text-xs font-semibold text-gray-600">Stock Type</label>
+              <select id="filter-stock-type" class="w-full mt-1 p-2.5 border rounded-lg">
+                <option value="">All</option>
+                <option value="COMMON">Common</option>
+                <option value="PREFERRED">Preferred</option>
+              </select>
+            </div>
+
+            <div class="md:col-span-3">
+              <label class="text-xs font-semibold text-gray-600">Series (Preferred)</label>
+              <select id="filter-series" class="w-full mt-1 p-2.5 border rounded-lg" disabled>
+                <option value="">Series (n/a)</option>
+              </select>
+            </div>
+
+            <div class="md:col-span-3">
+              <label class="text-xs font-semibold text-gray-600">Status</label>
+              <select id="filter-status" class="w-full mt-1 p-2.5 border rounded-lg">
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+                <option value="">All</option>
+              </select>
+            </div>
+
+            <div class="md:col-span-12">
+              <label class="text-xs font-semibold text-gray-600">Search</label>
+              <input id="filter-search" class="w-full mt-1 p-2.5 border rounded-lg"
+                placeholder="Search name, email, tax ID..." />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid -->
+      <div class="bg-white rounded-2xl shadow overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-gray-100">
+              <tr>
+                <th class="p-3 text-left text-xs font-bold text-gray-700">Shareholder</th>
+                <th class="p-3 text-left text-xs font-bold text-gray-700">Email</th>
+                <th class="p-3 text-left text-xs font-bold text-gray-700">Type</th>
+                <th class="p-3 text-left text-xs font-bold text-gray-700">Stock</th>
+                <th class="p-3 text-left text-xs font-bold text-gray-700">Series</th>
+                <th class="p-3 text-left text-xs font-bold text-gray-700">Shares</th>
+                <th class="p-3 text-left text-xs font-bold text-gray-700">Status</th>
+                <th class="p-3 text-right text-xs font-bold text-gray-700">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="grid-body" class="divide-y"></tbody>
+          </table>
+        </div>
+
+        <div id="grid-loading" class="p-10 text-center hidden">
+          <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gray-900"></div>
+          <div class="mt-2 text-gray-600 font-semibold">Loading…</div>
+        </div>
+
+        <div id="grid-empty" class="p-10 text-center hidden">
+          <div class="text-gray-700 font-semibold">No results</div>
+          <div class="text-gray-500 text-sm mt-1">Try changing filters or search terms.</div>
+        </div>
+      </div>
     </div>
+
+    <!-- ACTIONS MODAL -->
+    <div id="modal-actions" class="hidden">
+      <div class="modal-backdrop" onclick="closeModal('modal-actions')"></div>
+      <div class="modal">
+        <div class="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div class="p-5 border-b flex items-center justify-between">
+            <div class="font-bold text-gray-900" id="actions-title">Actions</div>
+            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-actions')">✕</button>
+          </div>
+
+          <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button onclick="openIssue()" class="p-4 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700">Issue</button>
+            <button onclick="openTransfer()" class="p-4 rounded-xl bg-gray-900 text-white font-bold hover:bg-black">Transfer</button>
+            <button onclick="openCancel()" class="p-4 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700">Cancel</button>
+            <button onclick="openReissue()" class="p-4 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600">Reissue (next)</button>
+            <button onclick="openReverseSplit()" class="p-4 rounded-xl bg-purple-600 text-white font-bold hover:bg-purple-700 sm:col-span-2">Reverse Split (next)</button>
+          </div>
+
+          <div class="p-5 border-t flex justify-end">
+            <button onclick="closeModal('modal-actions')" class="px-4 py-2 rounded-lg border font-semibold">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUE MODAL -->
+    <div id="modal-issue" class="hidden">
+      <div class="modal-backdrop" onclick="closeModal('modal-issue')"></div>
+      <div class="modal">
+        <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div class="p-5 border-b flex items-center justify-between">
+            <div class="font-bold text-gray-900">Issue Shares</div>
+            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-issue')">✕</button>
+          </div>
+
+          <form class="p-5 space-y-3" onsubmit="submitIssue(event)">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Shareholder ID</label>
+                <input id="issue-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Transaction Date</label>
+                <input id="issue-date" type="date" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Stock Type</label>
+                <select id="issue-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required>
+                  <option value="COMMON">COMMON</option>
+                  <option value="PREFERRED">PREFERRED</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Series (Preferred)</label>
+                <input id="issue-series" class="w-full mt-1 p-2.5 border rounded-lg" placeholder="e.g. A" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Shares</label>
+                <input id="issue-shares" type="number" step="0.0001" min="0" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Certificate #</label>
+                <input id="issue-cert" class="w-full mt-1 p-2.5 border rounded-lg" />
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-gray-600">Notes</label>
+              <textarea id="issue-notes" class="w-full mt-1 p-2.5 border rounded-lg" rows="3"></textarea>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" onclick="closeModal('modal-issue')" class="px-4 py-2 rounded-lg border font-semibold">Cancel</button>
+              <button id="issue-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700">
+                Issue <span id="issue-btn-loader" class="btn-loader ml-2 hidden"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRANSFER MODAL -->
+    <div id="modal-transfer" class="hidden">
+      <div class="modal-backdrop" onclick="closeModal('modal-transfer')"></div>
+      <div class="modal">
+        <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div class="p-5 border-b flex items-center justify-between">
+            <div class="font-bold text-gray-900">Transfer Shares</div>
+            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-transfer')">✕</button>
+          </div>
+
+          <form class="p-5 space-y-3" onsubmit="submitTransfer(event)">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-semibold text-gray-600">From Shareholder ID</label>
+                <input id="transfer-from-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">To Shareholder ID</label>
+                <input id="transfer-to-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Transaction Date</label>
+                <input id="transfer-date" type="date" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Shares</label>
+                <input id="transfer-shares" type="number" step="0.0001" min="0" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Stock Type</label>
+                <select id="transfer-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required>
+                  <option value="COMMON">COMMON</option>
+                  <option value="PREFERRED">PREFERRED</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Series (Preferred)</label>
+                <input id="transfer-series" class="w-full mt-1 p-2.5 border rounded-lg" placeholder="e.g. A" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Certificate #</label>
+                <input id="transfer-cert" class="w-full mt-1 p-2.5 border rounded-lg" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Notes</label>
+                <input id="transfer-notes" class="w-full mt-1 p-2.5 border rounded-lg" />
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" onclick="closeModal('modal-transfer')" class="px-4 py-2 rounded-lg border font-semibold">Cancel</button>
+              <button id="transfer-btn" class="px-4 py-2 rounded-lg bg-gray-900 text-white font-bold hover:bg-black">
+                Transfer <span id="transfer-btn-loader" class="btn-loader ml-2 hidden"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- CANCEL MODAL -->
+    <div id="modal-cancel" class="hidden">
+      <div class="modal-backdrop" onclick="closeModal('modal-cancel')"></div>
+      <div class="modal">
+        <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div class="p-5 border-b flex items-center justify-between">
+            <div class="font-bold text-gray-900">Cancel Shares</div>
+            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-cancel')">✕</button>
+          </div>
+
+          <form class="p-5 space-y-3" onsubmit="submitCancel(event)">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Shareholder ID</label>
+                <input id="cancel-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Transaction Date</label>
+                <input id="cancel-date" type="date" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Stock Type</label>
+                <select id="cancel-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required>
+                  <option value="COMMON">COMMON</option>
+                  <option value="PREFERRED">PREFERRED</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Series (Preferred)</label>
+                <input id="cancel-series" class="w-full mt-1 p-2.5 border rounded-lg" placeholder="e.g. A" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Shares</label>
+                <input id="cancel-shares" type="number" step="0.0001" min="0" class="w-full mt-1 p-2.5 border rounded-lg" required />
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-gray-600">Certificate #</label>
+                <input id="cancel-cert" class="w-full mt-1 p-2.5 border rounded-lg" />
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold text-gray-600">Notes</label>
+              <textarea id="cancel-notes" class="w-full mt-1 p-2.5 border rounded-lg" rows="3"></textarea>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" onclick="closeModal('modal-cancel')" class="px-4 py-2 rounded-lg border font-semibold">Cancel</button>
+              <button id="cancel-btn" class="px-4 py-2 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700">
+                Cancel Shares <span id="cancel-btn-loader" class="btn-loader ml-2 hidden"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
   </div>
 </body>
 </html>
