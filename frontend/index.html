@@ -35,7 +35,7 @@
       ENDPOINTS: {
         AUTH: '/auth',
         LEDGER: '/ledger',
-        ENTITIES: '/entities' // optional function; we try it and gracefully fallback if not present
+        ENTITIES: '/entities'
       }
     };
 
@@ -68,11 +68,16 @@
       return params.toString();
     }
 
-    function openModal(id){
-      document.getElementById(id).classList.remove('hidden');
-    }
-    function closeModal(id){
-      document.getElementById(id).classList.add('hidden');
+    function openModal(id){ document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+    function escapeHtml(s){
+      return String(s ?? '')
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'","&#039;");
     }
 
     // =========================
@@ -90,6 +95,11 @@
     function clearSession(){
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+    }
+
+    function isSuperAdmin(){
+      const u = getUser();
+      return (u?.role || '').toUpperCase() === 'SUPER_ADMIN';
     }
 
     // =========================
@@ -111,30 +121,23 @@
       const ct = res.headers.get('content-type') || '';
       const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
 
-      if (!res.ok || data.success === false) {
-        throw new Error(data.error || data.message || `Request failed (${res.status})`);
-      }
+      if (!res.ok || data.success === false) throw new Error(data.error || data.message || `Request failed (${res.status})`);
       return data;
     }
 
-    // Ledger: supports GET (recommended for your current ledger.js) and POST (for create/issue/transfer/cancel)
     async function ledgerGet(action, params = {}) {
       const token = getToken();
       const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LEDGER}?${qs({ action, ...params })}`;
 
       const res = await fetch(url, {
         method: 'GET',
-        headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        }
+        headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
       });
 
       const ct = res.headers.get('content-type') || '';
       const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
 
-      if (!res.ok || data.success === false) {
-        throw new Error(data.error || data.message || `Request failed (${res.status})`);
-      }
+      if (!res.ok || data.success === false) throw new Error(data.error || data.message || `Request failed (${res.status})`);
       return data;
     }
 
@@ -154,23 +157,20 @@
       const ct = res.headers.get('content-type') || '';
       const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
 
-      if (!res.ok || data.success === false) {
-        throw new Error(data.error || data.message || `Request failed (${res.status})`);
-      }
+      if (!res.ok || data.success === false) throw new Error(data.error || data.message || `Request failed (${res.status})`);
       return data;
     }
 
-    // Entities (optional endpoint). If missing, we fallback to user's entity only.
+    // Entities list (GET). If not available, return null and UI will fallback.
     async function entitiesList() {
       const token = getToken();
-      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENTITIES}?${qs({ action: 'list' })}`;
+      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENTITIES}?${qs({ action:'list' })}`;
 
       const res = await fetch(url, {
         method: 'GET',
         headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
       });
 
-      // if function doesn't exist, Netlify may return HTML / 404; treat as "not available"
       const ct = res.headers.get('content-type') || '';
       if (!res.ok || !ct.includes('application/json')) return null;
 
@@ -221,7 +221,6 @@
 
         const data = await authRequest('register', { full_name, email, password });
 
-        // auto-login if token returned
         if (data.token) {
           setSession(data.token, data.user);
           showToast('Registered + logged in!', 'success');
@@ -260,7 +259,7 @@
     }
 
     // =========================
-    // SHAREHOLDER GRID (Ownership)
+    // APP STATE
     // =========================
     let appState = {
       entities: [],
@@ -271,18 +270,13 @@
       search: ''
     };
 
-    function isSuperAdmin(){
-      const u = getUser();
-      return (u?.role || '').toUpperCase() === 'SUPER_ADMIN';
-    }
-
     async function loadEntityDropdown(){
       const u = getUser();
       const entitySelectWrap = document.getElementById('entity-filter-wrap');
       const entitySelect = document.getElementById('filter-entity');
 
+      // Non-superadmin: hide and force entity_id from token
       if (!isSuperAdmin()) {
-        // hide entity dropdown and force user's entity
         entitySelectWrap.classList.add('hidden');
         appState.selectedEntityId = u?.entity_id ? String(u.entity_id) : '';
         return;
@@ -290,12 +284,12 @@
 
       entitySelectWrap.classList.remove('hidden');
 
-      // Try entities function
+      // Try /api/entities?action=list
       const data = await entitiesList();
       if (data && Array.isArray(data.entities)) {
         appState.entities = data.entities;
       } else {
-        // fallback to just user's entity
+        // Fallback: only show user's entity
         appState.entities = [{
           id: u?.entity_id,
           name: u?.entity_name || `Entity ${u?.entity_id}`,
@@ -311,7 +305,7 @@
         entitySelect.appendChild(opt);
       });
 
-      // default to first
+      // Default select
       appState.selectedEntityId = entitySelect.value || (u?.entity_id ? String(u.entity_id) : '');
     }
 
@@ -319,7 +313,6 @@
       const seriesSelect = document.getElementById('filter-series');
       const stockType = appState.selectedStockType;
 
-      // Only show series when Preferred chosen
       if (stockType !== 'PREFERRED') {
         seriesSelect.value = '';
         seriesSelect.disabled = true;
@@ -328,24 +321,14 @@
         return;
       }
 
-      // Find distinct series
       const set = new Set();
-      (rows || []).forEach(r=>{
-        if (r.series) set.add(String(r.series));
-      });
+      (rows || []).forEach(r=>{ if (r.series) set.add(String(r.series)); });
 
       const list = Array.from(set).sort((a,b)=>a.localeCompare(b));
       seriesSelect.disabled = false;
-      seriesSelect.innerHTML = `<option value="">All Series</option>` + list.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-    }
-
-    function escapeHtml(s){
-      return String(s)
-        .replaceAll('&','&amp;')
-        .replaceAll('<','&lt;')
-        .replaceAll('>','&gt;')
-        .replaceAll('"','&quot;')
-        .replaceAll("'","&#039;");
+      seriesSelect.innerHTML =
+        `<option value="">All Series</option>` +
+        list.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
     }
 
     async function refreshShareholderGrid(){
@@ -359,9 +342,10 @@
       tbody.innerHTML = '';
 
       try {
-        // We use ownership because it supports stock_type + series + status logic
         const params = {
-          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : ''),
+          entity_id: isSuperAdmin()
+            ? appState.selectedEntityId
+            : (u?.entity_id ? String(u.entity_id) : ''),
           stock_type: appState.selectedStockType,
           series: appState.selectedSeries,
           status: appState.selectedStatus
@@ -372,7 +356,7 @@
 
         fillSeriesOptionsFromRows(rows);
 
-        // Client-side search (by name/email/tax_id)
+        // Search client-side (name/email/tax_id)
         const q = (appState.search || '').trim().toLowerCase();
         const filtered = q
           ? rows.filter(r => (
@@ -384,7 +368,6 @@
 
         renderShareholderGrid(filtered);
         loading.classList.add('hidden');
-
         if (!filtered.length) empty.classList.remove('hidden');
       } catch (e) {
         loading.classList.add('hidden');
@@ -407,18 +390,20 @@
         const shares = Number(r.current_shares || 0);
         const sharesFmt = isFinite(shares) ? shares.toLocaleString() : '0';
 
+        const sid = String(r.shareholder_id || r.id || '');
+
         return `
           <tr class="hover:bg-gray-50">
             <td class="p-3 font-semibold text-gray-900">${escapeHtml(r.full_name || '')}</td>
             <td class="p-3 text-gray-700">${escapeHtml(r.email || '')}</td>
             <td class="p-3 text-gray-700">${escapeHtml(r.shareholder_type || '')}</td>
             <td class="p-3">${stockPill}</td>
-            <td class="p-3 text-gray-700">${escapeHtml(r.series || (r.stock_type === 'PREFERRED' ? '' : '-'))}</td>
+            <td class="p-3 text-gray-700">${escapeHtml(r.series || (String(r.stock_type || '').toUpperCase()==='PREFERRED' ? '' : '-'))}</td>
             <td class="p-3 font-semibold text-gray-900">${sharesFmt}</td>
             <td class="p-3">${statusPill}</td>
             <td class="p-3 text-right">
               <button class="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-black"
-                onclick="openActions('${String(r.shareholder_id || r.id || '')}','${escapeHtml(r.full_name || '')}','${escapeHtml(r.stock_type || '')}','${escapeHtml(r.series || '')}')">
+                onclick="openActions('${sid}','${escapeHtml(r.full_name || '')}','${escapeHtml(r.stock_type || '')}','${escapeHtml(r.series || '')}')">
                 Actions
               </button>
             </td>
@@ -428,7 +413,7 @@
     }
 
     // =========================
-    // ACTIONS (Dialogs)
+    // ACTIONS + MODALS
     // =========================
     let selectedRow = { shareholder_id:'', full_name:'', stock_type:'', series:'' };
 
@@ -442,7 +427,7 @@
       document.getElementById('actions-title').textContent =
         `Actions for: ${selectedRow.full_name || 'Shareholder'}`;
 
-      // prefill common fields
+      // Prefill
       document.getElementById('issue-shareholder-id').value = selectedRow.shareholder_id || '';
       document.getElementById('issue-stock-type').value = selectedRow.stock_type || 'COMMON';
       document.getElementById('issue-series').value = selectedRow.series || '';
@@ -461,24 +446,11 @@
       openModal('modal-actions');
     }
 
-    function openIssue(){
-      closeModal('modal-actions');
-      openModal('modal-issue');
-    }
-    function openTransfer(){
-      closeModal('modal-actions');
-      openModal('modal-transfer');
-    }
-    function openCancel(){
-      closeModal('modal-actions');
-      openModal('modal-cancel');
-    }
-    function openReverseSplit(){
-      showToast('Reverse Split dialog is next (we will implement server-side logic + audit trail)', 'info', 4500);
-    }
-    function openReissue(){
-      showToast('Reissue dialog is next (we will implement certificate reissue + linking)', 'info', 4500);
-    }
+    function openIssue(){ closeModal('modal-actions'); openModal('modal-issue'); }
+    function openTransfer(){ closeModal('modal-actions'); openModal('modal-transfer'); }
+    function openCancel(){ closeModal('modal-actions'); openModal('modal-cancel'); }
+    function openReverseSplit(){ showToast('Reverse Split dialog is next (server-side logic + audit trail)', 'info', 4500); }
+    function openReissue(){ showToast('Reissue dialog is next (certificate reissue + linking)', 'info', 4500); }
 
     async function submitIssue(e){
       e.preventDefault();
@@ -493,8 +465,9 @@
           shares: document.getElementById('issue-shares').value,
           certificate_number: document.getElementById('issue-cert').value || null,
           notes: document.getElementById('issue-notes').value || null,
-          // SUPER_ADMIN can choose entity via dropdown; others use own entity on server
-          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : '')
+          entity_id: isSuperAdmin()
+            ? appState.selectedEntityId
+            : (u?.entity_id ? String(u.entity_id) : '')
         };
 
         await ledgerPost('issue-shares', payload);
@@ -522,7 +495,9 @@
           shares: document.getElementById('transfer-shares').value,
           certificate_number: document.getElementById('transfer-cert').value || null,
           notes: document.getElementById('transfer-notes').value || null,
-          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : '')
+          entity_id: isSuperAdmin()
+            ? appState.selectedEntityId
+            : (u?.entity_id ? String(u.entity_id) : '')
         };
 
         await ledgerPost('transfer-shares', payload);
@@ -549,7 +524,9 @@
           shares: document.getElementById('cancel-shares').value,
           certificate_number: document.getElementById('cancel-cert').value || null,
           notes: document.getElementById('cancel-notes').value || null,
-          entity_id: isSuperAdmin() ? appState.selectedEntityId : (u?.entity_id ? String(u.entity_id) : '')
+          entity_id: isSuperAdmin()
+            ? appState.selectedEntityId
+            : (u?.entity_id ? String(u.entity_id) : '')
         };
 
         await ledgerPost('cancel-shares', payload);
@@ -570,15 +547,14 @@
       const u = getUser();
       if (!u) return;
 
-      // Entity dropdown (SUPER_ADMIN only)
       await loadEntityDropdown();
 
-      // default filters
+      // Defaults
       document.getElementById('filter-stock-type').value = '';
       document.getElementById('filter-status').value = 'ACTIVE';
       document.getElementById('filter-series').disabled = true;
 
-      // Bind events
+      // Bind filter events
       document.getElementById('filter-stock-type').addEventListener('change', async (e)=>{
         appState.selectedStockType = e.target.value;
         appState.selectedSeries = '';
@@ -612,12 +588,10 @@
         await refreshShareholderGrid();
       });
 
-      // Set selected entity (if dropdown exists and visible)
+      // Seed state
       if (isSuperAdmin()) {
-        const entitySelect = document.getElementById('filter-entity');
-        appState.selectedEntityId = entitySelect.value || appState.selectedEntityId;
+        appState.selectedEntityId = document.getElementById('filter-entity').value || appState.selectedEntityId;
       }
-
       appState.selectedStockType = document.getElementById('filter-stock-type').value;
       appState.selectedStatus = document.getElementById('filter-status').value;
       appState.search = '';
@@ -648,11 +622,8 @@
       <div id="login-page" class="bg-white rounded-2xl shadow p-6">
         <h2 class="text-xl font-bold mb-4">Login</h2>
         <form onsubmit="handleLogin(event)" class="space-y-4">
-          <input id="login-email" type="email" required placeholder="Email"
-            class="w-full p-3 border rounded-lg" />
-          <input id="login-password" type="password" required placeholder="Password"
-            class="w-full p-3 border rounded-lg" />
-
+          <input id="login-email" type="email" required placeholder="Email" class="w-full p-3 border rounded-lg" />
+          <input id="login-password" type="password" required placeholder="Password" class="w-full p-3 border rounded-lg" />
           <button id="login-btn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold">
             Login <span id="login-btn-loader" class="btn-loader ml-2 hidden"></span>
           </button>
@@ -665,13 +636,9 @@
       <div id="register-page" class="bg-white rounded-2xl shadow p-6 hidden">
         <h2 class="text-xl font-bold mb-4">Register</h2>
         <form onsubmit="handleRegister(event)" class="space-y-4">
-          <input id="register-name" type="text" required placeholder="Full name"
-            class="w-full p-3 border rounded-lg" />
-          <input id="register-email" type="email" required placeholder="Email"
-            class="w-full p-3 border rounded-lg" />
-          <input id="register-password" type="password" required placeholder="Password"
-            class="w-full p-3 border rounded-lg" />
-
+          <input id="register-name" type="text" required placeholder="Full name" class="w-full p-3 border rounded-lg" />
+          <input id="register-email" type="email" required placeholder="Email" class="w-full p-3 border rounded-lg" />
+          <input id="register-password" type="password" required placeholder="Password" class="w-full p-3 border rounded-lg" />
           <button id="register-btn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold">
             Register <span id="register-btn-loader" class="btn-loader ml-2 hidden"></span>
           </button>
@@ -715,8 +682,7 @@
           <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
             <div id="entity-filter-wrap" class="md:col-span-3 hidden">
               <label class="text-xs font-semibold text-gray-600">Entity</label>
-              <select id="filter-entity" class="w-full mt-1 p-2.5 border rounded-lg">
-              </select>
+              <select id="filter-entity" class="w-full mt-1 p-2.5 border rounded-lg"></select>
             </div>
 
             <div class="md:col-span-3">
@@ -932,7 +898,7 @@
       <div class="modal-backdrop" onclick="closeModal('modal-cancel')"></div>
       <div class="modal">
         <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-between">
+          <div class="p-5 border-b flex items-center justify-content-between">
             <div class="font-bold text-gray-900">Cancel Shares</div>
             <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-cancel')">✕</button>
           </div>
