@@ -19,7 +19,19 @@
   to = "/.netlify/functions/:splat"
   status = 200
 
-# SPA fallback (only needed if you have client-side routes)
+# Login shortcut
+[[redirects]]
+  from = "/login"
+  to = "/app.html"
+  status = 200
+
+# App SPA fallback (VERY IMPORTANT)
+[[redirects]]
+  from = "/app/*"
+  to = "/app.html"
+  status = 200
+
+# Marketing SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
