@@ -1,11 +1,14 @@
-// netlify/functions/stockTypes.js
+// api/netlify-functions/stockTypes.js
 const { query } = require('./utils/db');
 const { authMiddleware, requireRole, enforceEntityScope } = require('./middleware/auth');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json', ...extraHeaders },
+    headers: {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    },
     body: JSON.stringify(body),
   };
 }
@@ -29,7 +32,28 @@ function normTypeCode(v) {
   return String(v || '').trim().toUpperCase();
 }
 
+const ALLOWED_TYPE_CODES = new Set(['COMMON', 'PREFERRED', 'WARRANT']);
+
+function normalizeSupportsSeries(stock_type, supports_series) {
+  const code = normTypeCode(stock_type);
+  // Business rule: preferred + warrants should have series enabled
+  if (code === 'PREFERRED' || code === 'WARRANT') return true;
+  // Common typically does NOT use series
+  if (code === 'COMMON') return false;
+  // fallback (should never happen if validated)
+  return Boolean(supports_series);
+}
+
 exports.handler = async (event) => {
+  // Clean CORS preflight. netlify.toml routes OPTIONS here, so respond fast.
+  if (event.httpMethod === 'OPTIONS') {
+    return json(200, { success: true }, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    });
+  }
+
   const params = event.queryStringParameters || {};
   const action = params.action;
 
@@ -51,7 +75,9 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'PUT') {
       if (action === 'update-type') return await handleUpdateType(event);
+      if (action === 'deactivate-type') return await handleDeactivateType(event);     // NEW
       if (action === 'update-series') return await handleUpdateSeries(event);
+      if (action === 'deactivate-series') return await handleDeactivateSeries(event); // NEW
       return json(400, { success: false, error: 'Invalid action or method' });
     }
 
@@ -100,10 +126,7 @@ async function handleGetType(event, params) {
   const { id } = params;
   if (!id) return json(400, { success: false, error: 'id is required' }, headers);
 
-  const res = await query(
-    `SELECT * FROM entity_stock_types WHERE id = $1`,
-    [id]
-  );
+  const res = await query(`SELECT * FROM entity_stock_types WHERE id = $1`, [id]);
   if (!res.rows.length) return json(404, { success: false, error: 'Not found' }, headers);
 
   const row = res.rows[0];
@@ -116,14 +139,13 @@ async function handleGetType(event, params) {
 
 // ------------------------------------
 // POST: create-type
-// body: { entity_id?, stock_type, display_name, supports_series, is_active? }
+// body: { entity_id?, stock_type, display_name, supports_series?, is_active? }
 // ------------------------------------
 async function handleCreateType(event) {
   const auth = await authMiddleware(event);
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  // Admin and Super Admin can manage types for their entity
   const canManage = requireRole(['SUPER_ADMIN', 'ADMIN'])(user);
   if (!canManage) return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
 
@@ -137,13 +159,17 @@ async function handleCreateType(event) {
 
   const stock_type = normTypeCode(body.stock_type);
   const display_name = String(body.display_name || '').trim();
-  const supports_series = Boolean(body.supports_series);
   const is_active = body.is_active === undefined ? true : Boolean(body.is_active);
 
   if (!stock_type) return json(400, { success: false, error: 'stock_type is required' }, headers);
+  if (!ALLOWED_TYPE_CODES.has(stock_type)) {
+    return json(400, { success: false, error: `Invalid stock_type. Allowed: COMMON, PREFERRED, WARRANT` }, headers);
+  }
   if (!display_name) return json(400, { success: false, error: 'display_name is required' }, headers);
 
-  // If you used ENUM stock_type_code, the DB will enforce allowed values.
+  // Force series behavior based on business rules
+  const supports_series = normalizeSupportsSeries(stock_type, body.supports_series);
+
   const result = await query(
     `
     INSERT INTO entity_stock_types (entity_id, stock_type, display_name, supports_series, is_active)
@@ -165,6 +191,7 @@ async function handleCreateType(event) {
 // ------------------------------------
 // PUT: update-type
 // body: { id, display_name?, supports_series?, is_active? }
+// Note: supports_series is governed by business rules for PREFERRED/WARRANT/COMMON.
 // ------------------------------------
 async function handleUpdateType(event) {
   const auth = await authMiddleware(event);
@@ -191,28 +218,100 @@ async function handleUpdateType(event) {
   let i = 0;
 
   if (body.display_name !== undefined) {
-    i++; fields.push(`display_name = $${i}`); values.push(String(body.display_name).trim());
+    const dn = String(body.display_name).trim();
+    if (!dn) return json(400, { success: false, error: 'display_name cannot be blank' }, headers);
+    i++; fields.push(`display_name = $${i}`); values.push(dn);
   }
-  if (body.supports_series !== undefined) {
-    i++; fields.push(`supports_series = $${i}`); values.push(Boolean(body.supports_series));
-  }
+
   if (body.is_active !== undefined) {
     i++; fields.push(`is_active = $${i}`); values.push(Boolean(body.is_active));
   }
 
+  if (body.supports_series !== undefined) {
+    // Normalize based on rules (Preferred/Warrant => true, Common => false)
+    const normalized = normalizeSupportsSeries(row.stock_type, body.supports_series);
+    i++; fields.push(`supports_series = $${i}`); values.push(Boolean(normalized));
+  }
+
   if (!fields.length) return json(400, { success: false, error: 'No fields to update' }, headers);
 
-  i++; values.push(id);
+  // If supports_series is being turned off, deactivate any series rows under it (consistency)
+  const turningOffSeries =
+    body.supports_series !== undefined &&
+    Boolean(row.supports_series) === true &&
+    Boolean(normalizeSupportsSeries(row.stock_type, body.supports_series)) === false;
 
-  const qText = `
-    UPDATE entity_stock_types
-    SET ${fields.join(', ')}, updated_at = NOW()
-    WHERE id = $${i}
-    RETURNING *
-  `;
+  await query('BEGIN');
+  try {
+    i++; values.push(id);
 
-  const updated = await query(qText, values);
-  return json(200, { success: true, stock_type: updated.rows[0] }, headers);
+    const qText = `
+      UPDATE entity_stock_types
+      SET ${fields.join(', ')}, updated_at = NOW()
+      WHERE id = $${i}
+      RETURNING *
+    `;
+    const updated = await query(qText, values);
+
+    if (turningOffSeries) {
+      await query(
+        `UPDATE entity_stock_series SET is_active = FALSE, updated_at = NOW() WHERE entity_stock_type_id = $1`,
+        [id]
+      );
+    }
+
+    await query('COMMIT');
+    return json(200, { success: true, stock_type: updated.rows[0] }, headers);
+  } catch (e) {
+    await query('ROLLBACK');
+    throw e;
+  }
+}
+
+// ------------------------------------
+// PUT: deactivate-type
+// body: { id }
+// Soft-deactivate a type (is_active=false)
+// ------------------------------------
+async function handleDeactivateType(event) {
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  const canManage = requireRole(['SUPER_ADMIN', 'ADMIN'])(user);
+  if (!canManage) return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
+
+  const body = parseBody(event);
+  const { id } = body;
+  if (!id) return json(400, { success: false, error: 'id is required' }, headers);
+
+  const existing = await query(`SELECT * FROM entity_stock_types WHERE id = $1`, [id]);
+  if (!existing.rows.length) return json(404, { success: false, error: 'Stock type not found' }, headers);
+
+  const row = existing.rows[0];
+  if (!enforceEntityScope(user, row.entity_id)) {
+    return json(403, { success: false, error: 'Forbidden: Cannot manage this entity' }, headers);
+  }
+
+  await query('BEGIN');
+  try {
+    const updated = await query(
+      `UPDATE entity_stock_types SET is_active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    // Deactivate all series under the type (optional but consistent)
+    await query(
+      `UPDATE entity_stock_series SET is_active = FALSE, updated_at = NOW() WHERE entity_stock_type_id = $1`,
+      [id]
+    );
+
+    await query('COMMIT');
+    return json(200, { success: true, stock_type: updated.rows[0] }, headers);
+  } catch (e) {
+    await query('ROLLBACK');
+    throw e;
+  }
 }
 
 // ------------------------------------
@@ -274,7 +373,7 @@ async function handleCreateSeries(event) {
   if (!series) return json(400, { success: false, error: 'series is required' }, headers);
 
   const typeRes = await query(
-    `SELECT id, entity_id, supports_series FROM entity_stock_types WHERE id = $1`,
+    `SELECT id, entity_id, supports_series, is_active FROM entity_stock_types WHERE id = $1`,
     [entity_stock_type_id]
   );
   if (!typeRes.rows.length) return json(404, { success: false, error: 'Stock type not found' }, headers);
@@ -282,6 +381,9 @@ async function handleCreateSeries(event) {
   const st = typeRes.rows[0];
   if (!enforceEntityScope(user, st.entity_id)) {
     return json(403, { success: false, error: 'Forbidden' }, headers);
+  }
+  if (!st.is_active) {
+    return json(400, { success: false, error: 'Cannot add series to an inactive stock type' }, headers);
   }
   if (!st.supports_series) {
     return json(400, { success: false, error: 'This stock type does not support series' }, headers);
@@ -360,5 +462,46 @@ async function handleUpdateSeries(event) {
   `;
 
   const updated = await query(qText, values);
+  return json(200, { success: true, series: updated.rows[0] }, headers);
+}
+
+// ------------------------------------
+// PUT: deactivate-series
+// body: { id }
+// Soft-deactivate a series
+// ------------------------------------
+async function handleDeactivateSeries(event) {
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  const canManage = requireRole(['SUPER_ADMIN', 'ADMIN'])(user);
+  if (!canManage) return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
+
+  const body = parseBody(event);
+  const { id } = body;
+  if (!id) return json(400, { success: false, error: 'id is required' }, headers);
+
+  const existing = await query(
+    `
+    SELECT es.*, est.entity_id
+    FROM entity_stock_series es
+    JOIN entity_stock_types est ON est.id = es.entity_stock_type_id
+    WHERE es.id = $1
+    `,
+    [id]
+  );
+  if (!existing.rows.length) return json(404, { success: false, error: 'Series not found' }, headers);
+
+  const row = existing.rows[0];
+  if (!enforceEntityScope(user, row.entity_id)) {
+    return json(403, { success: false, error: 'Forbidden' }, headers);
+  }
+
+  const updated = await query(
+    `UPDATE entity_stock_series SET is_active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [id]
+  );
+
   return json(200, { success: true, series: updated.rows[0] }, headers);
 }
