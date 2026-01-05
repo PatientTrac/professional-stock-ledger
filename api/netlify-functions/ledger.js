@@ -61,6 +61,15 @@ function toNumber(x) {
   return Number.isFinite(n) ? n : null;
 }
 
+function upper(x) {
+  return String(x ?? '').trim().toUpperCase();
+}
+
+function normalizeSeries(x) {
+  const s = String(x ?? '').trim();
+  return s ? s : null;
+}
+
 // Decide entity based on role + optional entity_id param/body
 function resolveTargetEntityId(user, providedEntityId) {
   if ((user.role || '').toUpperCase() === 'SUPER_ADMIN') {
@@ -69,6 +78,81 @@ function resolveTargetEntityId(user, providedEntityId) {
   }
   // Admin/User are scoped to their entity
   return user.entity_id;
+}
+
+/**
+ * Validate the stock_type + series against the new tables:
+ *  - entity_stock_types (active)
+ *  - entity_stock_type_series (active) if supports_series
+ *
+ * Returns:
+ *  {
+ *    stock_type_id,
+ *    stock_type,
+ *    supports_series,
+ *    series // normalized (null if not required)
+ *  }
+ */
+async function validateStockTypeAndSeries({ entity_id, stock_type, series }) {
+  const st = upper(stock_type);
+  if (!st) throw new Error('stock_type is required');
+
+  const tRes = await query(
+    `
+      SELECT id, stock_type, supports_series, is_active
+      FROM entity_stock_types
+      WHERE entity_id = $1 AND stock_type = $2
+      LIMIT 1
+    `,
+    [entity_id, st]
+  );
+
+  if (!tRes.rows.length) {
+    throw new Error(`Invalid stock_type "${st}" for this entity`);
+  }
+  const typeRow = tRes.rows[0];
+
+  if (typeRow.is_active === false) {
+    throw new Error(`Stock type "${st}" is inactive for this entity`);
+  }
+
+  const supportsSeries = !!typeRow.supports_series;
+  const normSeries = normalizeSeries(series);
+
+  if (supportsSeries) {
+    if (!normSeries) {
+      throw new Error(`Series is required for stock type "${st}"`);
+    }
+
+    const sRes = await query(
+      `
+        SELECT id, series, is_active
+        FROM entity_stock_type_series
+        WHERE entity_stock_type_id = $1 AND series = $2
+        LIMIT 1
+      `,
+      [typeRow.id, normSeries]
+    );
+
+    if (!sRes.rows.length) {
+      throw new Error(`Invalid series "${normSeries}" for stock type "${st}"`);
+    }
+    if (sRes.rows[0].is_active === false) {
+      throw new Error(`Series "${normSeries}" is inactive for stock type "${st}"`);
+    }
+  } else {
+    // If type doesn't support series, force it to NULL to keep data consistent
+    if (normSeries) {
+      throw new Error(`Series is not allowed for stock type "${st}"`);
+    }
+  }
+
+  return {
+    stock_type_id: typeRow.id,
+    stock_type: typeRow.stock_type,
+    supports_series: supportsSeries,
+    series: supportsSeries ? normSeries : null,
+  };
 }
 
 // ------------------------------
@@ -103,7 +187,6 @@ async function handleCreateShareholder(event) {
   const targetEntityId = resolveTargetEntityId(user, entity_id);
   if (!targetEntityId) return json(400, { success:false, error:'Entity ID is required' }, headers);
 
-  // If SUPER_ADMIN tries to create for a different entity, allow; otherwise enforce scope
   if (!enforceEntityScope(user, targetEntityId)) {
     return json(403, { success:false, error:'Forbidden: Cannot create in this entity' }, headers);
   }
@@ -300,10 +383,6 @@ async function handleIssueShares(event) {
     return json(400, { success:false, error:'shareholder_id, transaction_date, stock_type, shares are required' }, headers);
   }
 
-  if (String(stock_type).toUpperCase() === 'PREFERRED' && !series) {
-    return json(400, { success:false, error:'Series is required for preferred stock' }, headers);
-  }
-
   const sharesNum = toNumber(shares);
   if (sharesNum === null || sharesNum <= 0) {
     return json(400, { success:false, error:'Shares must be a positive number' }, headers);
@@ -321,6 +400,13 @@ async function handleIssueShares(event) {
       return json(404, { success:false, error:'Shareholder not found or not active in this entity' }, headers);
     }
 
+    // ✅ validate stock_type + series from DB
+    const v = await validateStockTypeAndSeries({
+      entity_id: targetEntityId,
+      stock_type,
+      series
+    });
+
     const result = await query(
       `
       INSERT INTO share_transactions (
@@ -335,8 +421,8 @@ async function handleIssueShares(event) {
         targetEntityId,
         shareholder_id,
         transaction_date,
-        String(stock_type).toUpperCase(),
-        series || null,
+        v.stock_type,
+        v.series,
         sharesNum,
         certificate_number || null,
         price_per_share !== undefined && price_per_share !== null ? toNumber(price_per_share) : null,
@@ -385,10 +471,6 @@ async function handleTransferShares(event) {
     return json(400, { success:false, error:'Cannot transfer shares to the same shareholder' }, headers);
   }
 
-  if (String(stock_type).toUpperCase() === 'PREFERRED' && !series) {
-    return json(400, { success:false, error:'Series is required for preferred stock' }, headers);
-  }
-
   const sharesNum = toNumber(shares);
   if (sharesNum === null || sharesNum <= 0) {
     return json(400, { success:false, error:'Shares must be a positive number' }, headers);
@@ -406,6 +488,13 @@ async function handleTransferShares(event) {
       return json(404, { success:false, error:'One or both shareholders not found or not active in this entity' }, headers);
     }
 
+    // ✅ validate stock_type + series from DB
+    const v = await validateStockTypeAndSeries({
+      entity_id: targetEntityId,
+      stock_type,
+      series
+    });
+
     // Available shares for FROM holder in that stock/series:
     const avail = await query(
       `
@@ -413,9 +502,9 @@ async function handleTransferShares(event) {
       FROM share_transactions st
       WHERE st.shareholder_id = $1
         AND st.stock_type = $2
-        AND ( ($2 = 'COMMON' AND st.series IS NULL) OR ($2 = 'PREFERRED' AND st.series = $3) )
+        AND ( ($3::text IS NULL AND st.series IS NULL) OR (st.series = $3::text) )
       `,
-      [from_shareholder_id, String(stock_type).toUpperCase(), series || null]
+      [from_shareholder_id, v.stock_type, v.series]
     );
 
     const availableShares = Number(avail.rows[0].available_shares || 0);
@@ -441,8 +530,8 @@ async function handleTransferShares(event) {
           targetEntityId,
           from_shareholder_id,
           transaction_date,
-          String(stock_type).toUpperCase(),
-          series || null,
+          v.stock_type,
+          v.series,
           -sharesNum,
           from_shareholder_id,
           to_shareholder_id,
@@ -469,8 +558,8 @@ async function handleTransferShares(event) {
           targetEntityId,
           to_shareholder_id,
           transaction_date,
-          String(stock_type).toUpperCase(),
-          series || null,
+          v.stock_type,
+          v.series,
           sharesNum,
           from_shareholder_id,
           to_shareholder_id,
@@ -521,10 +610,6 @@ async function handleCancelShares(event) {
     return json(400, { success:false, error:'shareholder_id, transaction_date, stock_type, shares are required' }, headers);
   }
 
-  if (String(stock_type).toUpperCase() === 'PREFERRED' && !series) {
-    return json(400, { success:false, error:'Series is required for preferred stock' }, headers);
-  }
-
   const sharesNum = toNumber(shares);
   if (sharesNum === null || sharesNum <= 0) {
     return json(400, { success:false, error:'Shares must be a positive number' }, headers);
@@ -542,6 +627,13 @@ async function handleCancelShares(event) {
       return json(404, { success:false, error:'Shareholder not found or not active in this entity' }, headers);
     }
 
+    // ✅ validate stock_type + series from DB
+    const v = await validateStockTypeAndSeries({
+      entity_id: targetEntityId,
+      stock_type,
+      series
+    });
+
     // Available shares for that holder/stock/series:
     const avail = await query(
       `
@@ -549,9 +641,9 @@ async function handleCancelShares(event) {
       FROM share_transactions st
       WHERE st.shareholder_id = $1
         AND st.stock_type = $2
-        AND ( ($2 = 'COMMON' AND st.series IS NULL) OR ($2 = 'PREFERRED' AND st.series = $3) )
+        AND ( ($3::text IS NULL AND st.series IS NULL) OR (st.series = $3::text) )
       `,
-      [shareholder_id, String(stock_type).toUpperCase(), series || null]
+      [shareholder_id, v.stock_type, v.series]
     );
 
     const availableShares = Number(avail.rows[0].available_shares || 0);
@@ -573,8 +665,8 @@ async function handleCancelShares(event) {
         targetEntityId,
         shareholder_id,
         transaction_date,
-        String(stock_type).toUpperCase(),
-        series || null,
+        v.stock_type,
+        v.series,
         -sharesNum,
         certificate_number || null,
         notes || null,
@@ -630,9 +722,9 @@ async function handleGetTransactions(event, params) {
     let i = 1;
 
     if (shareholder_id) { i++; qText += ` AND st.shareholder_id = $${i}`; qParams.push(shareholder_id); }
-    if (stock_type)     { i++; qText += ` AND st.stock_type = $${i}`; qParams.push(String(stock_type).toUpperCase()); }
+    if (stock_type)     { i++; qText += ` AND st.stock_type = $${i}`; qParams.push(upper(stock_type)); }
     if (series)         { i++; qText += ` AND st.series = $${i}`; qParams.push(series); }
-    if (transaction_type){ i++; qText += ` AND st.transaction_type = $${i}`; qParams.push(String(transaction_type).toUpperCase()); }
+    if (transaction_type){ i++; qText += ` AND st.transaction_type = $${i}`; qParams.push(upper(transaction_type)); }
     if (start_date)     { i++; qText += ` AND st.transaction_date >= $${i}`; qParams.push(start_date); }
     if (end_date)       { i++; qText += ` AND st.transaction_date <= $${i}`; qParams.push(end_date); }
 
@@ -660,6 +752,8 @@ async function handleGetOwnership(event, params) {
   if (!targetEntityId) return json(400, { success:false, error:'Entity not resolved' }, headers);
 
   try {
+    // Important: keep LEFT JOIN, but put stock_type/series filters in JOIN condition
+    // so shareholders still show even if they have no transactions.
     let qText = `
       WITH balances AS (
         SELECT
@@ -673,17 +767,28 @@ async function handleGetOwnership(event, params) {
           st.series,
           COALESCE(SUM(st.shares), 0) AS current_shares
         FROM shareholders s
-        LEFT JOIN share_transactions st ON st.shareholder_id = s.id
-        WHERE s.entity_id = $1
+        LEFT JOIN share_transactions st
+          ON st.shareholder_id = s.id
+          AND st.entity_id = $1
     `;
 
     const qParams = [targetEntityId];
     let i = 1;
 
-    if (stock_type) { i++; qText += ` AND st.stock_type = $${i}`; qParams.push(String(stock_type).toUpperCase()); }
-    if (series)     { i++; qText += ` AND st.series = $${i}`; qParams.push(series); }
+    if (stock_type) {
+      i++;
+      qText += ` AND st.stock_type = $${i}`;
+      qParams.push(upper(stock_type));
+    }
+
+    if (series) {
+      i++;
+      qText += ` AND st.series = $${i}`;
+      qParams.push(series);
+    }
 
     qText += `
+        WHERE s.entity_id = $1
         GROUP BY s.id, st.stock_type, st.series
       )
       SELECT
@@ -696,7 +801,7 @@ async function handleGetOwnership(event, params) {
     if (status === 'ACTIVE') qText += ` AND b.current_shares > 0`;
     if (status === 'INACTIVE') qText += ` AND b.current_shares = 0`;
 
-    qText += ` ORDER BY b.stock_type, b.series, b.full_name`;
+    qText += ` ORDER BY b.stock_type NULLS FIRST, b.series NULLS FIRST, b.full_name`;
 
     const result = await query(qText, qParams);
     return json(200, { success:true, ownership: result.rows }, headers);
@@ -748,7 +853,6 @@ async function handleUpdateShareholder(event) {
       params.push(updates[k]);
     }
 
-    // updated_at
     sets.push(`updated_at = CURRENT_TIMESTAMP`);
 
     i++;
