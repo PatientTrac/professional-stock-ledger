@@ -182,12 +182,12 @@
 
     // =========================
     // STOCK TYPES (NEW)
-    // Expected API contract (recommended):
+    // Expected API contract:
     //   GET /api/stockTypes?action=list-types&entity_id=123
     //     -> { success:true, stock_types:[{ id, stock_type, display_name, supports_series, is_active }] }
     //   GET /api/stockTypes?action=list-series&entity_stock_type_id=456
     //     -> { success:true, series:[{ id, series, is_active }] }
-    // If not available yet, UI gracefully falls back to Common/Preferred.
+    // If not available yet, UI falls back to Common/Preferred.
     // =========================
     async function stockTypesList(entityId){
       const token = getToken();
@@ -298,13 +298,13 @@
     let appState = {
       entities: [],
       selectedEntityId: '',
-      selectedStockTypeId: '',        // NEW: entity_stock_types.id
-      selectedStockTypeCode: '',      // NEW: COMMON/PREFERRED/WARRANT
+      selectedStockTypeId: '',        // entity_stock_types.id
+      selectedStockTypeCode: '',      // COMMON/PREFERRED/WARRANT etc
       selectedSeries: '',
       selectedStatus: 'ACTIVE',
       search: '',
-      stockTypes: [],                 // NEW: loaded from DB
-      seriesByTypeId: {}              // NEW: cache
+      stockTypes: [],
+      seriesByTypeId: {}
     };
 
     function getActiveEntityId(){
@@ -319,7 +319,6 @@
       const entitySelectWrap = document.getElementById('entity-filter-wrap');
       const entitySelect = document.getElementById('filter-entity');
 
-      // Non-superadmin: hide and force entity_id from token
       if (!isSuperAdmin()) {
         entitySelectWrap.classList.add('hidden');
         appState.selectedEntityId = u?.entity_id ? String(u.entity_id) : '';
@@ -328,12 +327,10 @@
 
       entitySelectWrap.classList.remove('hidden');
 
-      // Try /api/entities?action=list
       const data = await entitiesList();
       if (data && Array.isArray(data.entities)) {
         appState.entities = data.entities;
       } else {
-        // Fallback: only show user's entity
         appState.entities = [{
           id: u?.entity_id,
           name: u?.entity_name || `Entity ${u?.entity_id}`,
@@ -349,12 +346,11 @@
         entitySelect.appendChild(opt);
       });
 
-      // Default select
       appState.selectedEntityId = entitySelect.value || (u?.entity_id ? String(u.entity_id) : '');
     }
 
     // =========================
-    // STOCK TYPE DROPDOWNS (NEW)
+    // STOCK TYPE + SERIES DROPDOWNS
     // =========================
     function fallbackStockTypes(){
       return [
@@ -393,13 +389,11 @@
 
       appState.stockTypes.forEach(st=>{
         const opt = document.createElement('option');
-        // If types are from DB, id is numeric; fallback uses string code
         opt.value = String(st.id);
         opt.textContent = st.display_name || st.stock_type || st.id;
         sel.appendChild(opt);
       });
 
-      // Keep previous selection if still present
       if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
         sel.value = prevValue;
       } else {
@@ -420,7 +414,6 @@
         return;
       }
 
-      // Fetch + cache
       if (!appState.seriesByTypeId[String(entityStockTypeId)]) {
         const data = await stockSeriesList(entityStockTypeId);
         const list = (data && Array.isArray(data.series)) ? data.series.filter(x=>x.is_active !== false) : [];
@@ -429,7 +422,8 @@
 
       const seriesList = appState.seriesByTypeId[String(entityStockTypeId)];
       seriesSelect.disabled = false;
-      seriesSelect.innerHTML = (includeAllOption ? `<option value="">All Series</option>` : `<option value="">Select Series</option>`) +
+      seriesSelect.innerHTML =
+        (includeAllOption ? `<option value="">All Series</option>` : `<option value="">Select Series</option>`) +
         seriesList.map(s => `<option value="${escapeHtml(s.series)}">${escapeHtml(s.series)}</option>`).join('');
     }
 
@@ -461,10 +455,9 @@
       try {
         const entityId = getActiveEntityId();
 
-        // Send stock_type CODE to ledger.js (keeps compatibility with existing backend)
         const params = {
           entity_id: entityId,
-          stock_type: appState.selectedStockTypeCode, // NEW
+          stock_type: appState.selectedStockTypeCode,
           series: appState.selectedSeries,
           status: appState.selectedStatus
         };
@@ -472,14 +465,12 @@
         const data = await ledgerGet('ownership', params);
         const rows = Array.isArray(data.ownership) ? data.ownership : [];
 
-        // If filter is a series-supporting type, ensure series dropdown is enabled
         if (appState.selectedStockTypeId) {
           await populateSeriesSelectForType('filter-series', appState.selectedStockTypeId, true);
         } else {
           resetSeriesDropdown('filter-series', 'Series (select stock type)');
         }
 
-        // Search client-side (name/email/tax_id)
         const q = (appState.search || '').trim().toLowerCase();
         const filtered = q
           ? rows.filter(r => (
@@ -601,21 +592,18 @@
       const typeId = document.getElementById(selectId).value;
       const st = getStockTypeById(typeId);
 
-      // If not DB-backed yet (fallback), then typeId is code
       const typeCode = (st?.stock_type || typeId || '').toUpperCase();
 
       const seriesEl = document.getElementById(seriesInputId);
       const helpEl = document.getElementById(seriesHelpId);
 
       if (st && st.supports_series) {
-        // Switch to dropdown if you prefer; here we keep the input but show helper.
         helpEl.textContent = 'Series required for this stock type (e.g., A, B, Seed).';
         seriesEl.placeholder = 'e.g. A';
         seriesEl.disabled = false;
         return;
       }
 
-      // Fallback logic: require series for PREFERRED/WARRANT
       if (typeCode === 'PREFERRED' || typeCode === 'WARRANT' || typeCode === 'WARRANTS') {
         helpEl.textContent = 'Series required for this stock type (e.g., A, B, Seed).';
         seriesEl.placeholder = 'e.g. A';
@@ -638,7 +626,6 @@
       document.getElementById('actions-title').textContent =
         `Actions for: ${selectedRow.full_name || 'Shareholder'}`;
 
-      // Prefill IDs + date
       document.getElementById('issue-shareholder-id').value = selectedRow.shareholder_id || '';
       document.getElementById('issue-date').valueAsDate = new Date();
 
@@ -648,8 +635,6 @@
       document.getElementById('cancel-shareholder-id').value = selectedRow.shareholder_id || '';
       document.getElementById('cancel-date').valueAsDate = new Date();
 
-      // Default stock type selection in dialogs:
-      // If DB types exist -> choose matching by code
       const match = appState.stockTypes.find(st => (st.stock_type || '').toUpperCase() === selectedRow.stock_type);
       const issueSel = document.getElementById('issue-stock-type');
       const transferSel = document.getElementById('transfer-stock-type');
@@ -660,7 +645,6 @@
         transferSel.value = String(match.id);
         cancelSel.value = String(match.id);
       } else {
-        // fallback types: value is code
         issueSel.value = selectedRow.stock_type || 'COMMON';
         transferSel.value = selectedRow.stock_type || 'COMMON';
         cancelSel.value = selectedRow.stock_type || 'COMMON';
@@ -684,7 +668,6 @@
     function openReissue(){ showToast('Reissue dialog is next (certificate reissue + linking)', 'info', 4500); }
 
     function stockTypeCodeFromDialogValue(val){
-      // If val matches DB id, convert to code. Otherwise val already is code.
       const st = getStockTypeById(val);
       return (st?.stock_type || val || '').toUpperCase();
     }
@@ -698,7 +681,7 @@
         const payload = {
           shareholder_id: document.getElementById('issue-shareholder-id').value,
           transaction_date: document.getElementById('issue-date').value,
-          stock_type: stockTypeCodeFromDialogValue(stockTypeVal), // NEW
+          stock_type: stockTypeCodeFromDialogValue(stockTypeVal),
           series: document.getElementById('issue-series').value || null,
           shares: document.getElementById('issue-shares').value,
           certificate_number: document.getElementById('issue-cert').value || null,
@@ -729,7 +712,7 @@
           from_shareholder_id: document.getElementById('transfer-from-shareholder-id').value,
           to_shareholder_id: document.getElementById('transfer-to-shareholder-id').value,
           transaction_date: document.getElementById('transfer-date').value,
-          stock_type: stockTypeCodeFromDialogValue(stockTypeVal), // NEW
+          stock_type: stockTypeCodeFromDialogValue(stockTypeVal),
           series: document.getElementById('transfer-series').value || null,
           shares: document.getElementById('transfer-shares').value,
           certificate_number: document.getElementById('transfer-cert').value || null,
@@ -759,7 +742,7 @@
         const payload = {
           shareholder_id: document.getElementById('cancel-shareholder-id').value,
           transaction_date: document.getElementById('cancel-date').value,
-          stock_type: stockTypeCodeFromDialogValue(stockTypeVal), // NEW
+          stock_type: stockTypeCodeFromDialogValue(stockTypeVal),
           series: document.getElementById('cancel-series').value || null,
           shares: document.getElementById('cancel-shares').value,
           certificate_number: document.getElementById('cancel-cert').value || null,
@@ -789,21 +772,17 @@
 
       await loadEntityDropdown();
 
-      // Load stock types for active entity
       await loadStockTypesForEntity(getActiveEntityId());
 
-      // Populate dropdowns from DB
       populateStockTypeSelect('filter-stock-type', true);
       populateStockTypeSelect('issue-stock-type', false);
       populateStockTypeSelect('transfer-stock-type', false);
       populateStockTypeSelect('cancel-stock-type', false);
 
-      // Defaults
       document.getElementById('filter-status').value = 'ACTIVE';
       resetSeriesDropdown('filter-series', 'Series (select stock type)');
 
-      // Bind filter events
-      document.getElementById('filter-stock-type').addEventListener('change', async (e)=>{
+      document.getElementById('filter-stock-type').addEventListener('change', async ()=>{
         syncSelectedStockTypeState('filter-stock-type');
         appState.selectedSeries = '';
         document.getElementById('filter-series').value = '';
@@ -841,18 +820,14 @@
       entitySelect.addEventListener('change', async (e)=>{
         appState.selectedEntityId = e.target.value;
 
-        // when entity changes:
-        // - reload types + clear cached series
         appState.seriesByTypeId = {};
         await loadStockTypesForEntity(getActiveEntityId());
 
-        // repopulate dropdowns
         populateStockTypeSelect('filter-stock-type', true);
         populateStockTypeSelect('issue-stock-type', false);
         populateStockTypeSelect('transfer-stock-type', false);
         populateStockTypeSelect('cancel-stock-type', false);
 
-        // reset filter selections
         appState.selectedStockTypeId = '';
         appState.selectedStockTypeCode = '';
         appState.selectedSeries = '';
@@ -862,7 +837,6 @@
         await refreshShareholderGrid();
       });
 
-      // Dialog: stock type change toggles series required
       document.getElementById('issue-stock-type').addEventListener('change', async ()=>{
         await applyStockTypeToDialog('issue-stock-type','issue-series','issue-series-help');
       });
@@ -873,7 +847,6 @@
         await applyStockTypeToDialog('cancel-stock-type','cancel-series','cancel-series-help');
       });
 
-      // Seed state
       appState.selectedStatus = document.getElementById('filter-status').value;
       appState.search = '';
       appState.selectedStockTypeId = '';
@@ -977,13 +950,11 @@
 
             <div class="md:col-span-3">
               <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-              <!-- NEW: populated from DB -->
               <select id="filter-stock-type" class="w-full mt-1 p-2.5 border rounded-lg"></select>
             </div>
 
             <div class="md:col-span-3">
               <label class="text-xs font-semibold text-gray-600">Series</label>
-              <!-- NEW: populated from DB when supports_series -->
               <select id="filter-series" class="w-full mt-1 p-2.5 border rounded-lg" disabled>
                 <option value="">Series (select stock type)</option>
               </select>
@@ -1163,7 +1134,6 @@
               </div>
               <div>
                 <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-                <!-- NEW: populated from DB -->
                 <select id="issue-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required></select>
               </div>
               <div>
@@ -1227,7 +1197,6 @@
               </div>
               <div>
                 <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-                <!-- NEW: populated from DB -->
                 <select id="transfer-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required></select>
               </div>
               <div>
@@ -1261,7 +1230,7 @@
       <div class="modal-backdrop" onclick="closeModal('modal-cancel')"></div>
       <div class="modal">
         <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-between">
+          <div class="p-5 border-b flex items-center justify-content-between justify-between">
             <div class="font-bold text-gray-900">Cancel Shares</div>
             <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-cancel')">✕</button>
           </div>
@@ -1278,7 +1247,6 @@
               </div>
               <div>
                 <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-                <!-- NEW: populated from DB -->
                 <select id="cancel-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required></select>
               </div>
               <div>
