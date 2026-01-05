@@ -162,7 +162,6 @@
       return data;
     }
 
-    // Entities list (GET). If not available, return null and UI will fallback.
     async function entitiesList() {
       const token = getToken();
       const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENTITIES}?${qs({ action:'list' })}`;
@@ -182,12 +181,6 @@
 
     // =========================
     // STOCK TYPES (NEW)
-    // Expected API contract:
-    //   GET /api/stockTypes?action=list-types&entity_id=123
-    //     -> { success:true, stock_types:[{ id, stock_type, display_name, supports_series, is_active }] }
-    //   GET /api/stockTypes?action=list-series&entity_stock_type_id=456
-    //     -> { success:true, series:[{ id, series, is_active }] }
-    // If not available yet, UI falls back to Common/Preferred.
     // =========================
     async function stockTypesList(entityId){
       const token = getToken();
@@ -446,7 +439,6 @@
       const loading = document.getElementById('grid-loading');
       const empty = document.getElementById('grid-empty');
       const tbody = document.getElementById('grid-body');
-      const u = getUser();
 
       loading.classList.remove('hidden');
       empty.classList.add('hidden');
@@ -909,8 +901,13 @@
 
   <!-- APP -->
   <div id="app-container" class="hidden">
+    <!-- STEP 4 CHANGE: add Home link to "/" -->
     <nav class="bg-white shadow px-6 py-4 flex justify-between items-center">
-      <div class="font-bold text-xl">📊 Preferred Stock Ledger</div>
+      <div class="flex items-center gap-4">
+        <a href="/" class="text-sm font-semibold text-gray-700 hover:text-blue-600">Home</a>
+        <div class="font-bold text-xl">📊 Preferred Stock Ledger</div>
+      </div>
+
       <div class="flex items-center gap-4">
         <span id="username" class="font-semibold text-gray-700"></span>
         <button id="logout-btn" onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold">
@@ -1230,7 +1227,7 @@
       <div class="modal-backdrop" onclick="closeModal('modal-cancel')"></div>
       <div class="modal">
         <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-content-between justify-between">
+          <div class="p-5 border-b flex items-center justify-between">
             <div class="font-bold text-gray-900">Cancel Shares</div>
             <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-cancel')">✕</button>
           </div>
