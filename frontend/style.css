@@ -563,19 +563,34 @@ button {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .cap-table-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem;
+  padding: 0.5rem;
   border-radius: 0.5rem;
   background: hsl(243 51% 15% / 0.5);
   border: 1px solid hsl(220 25% 20% / 0.3);
   animation: fadeIn 0.5s ease forwards;
   opacity: 0;
+}
+
+.header-values span {
+  min-width: 50px;
+  text-align: right;
+}
+
+.cap-table-row.total {
+  background: rgba(212,175,55,0.12);
+  border: 1px solid rgba(212,175,55,0.35);
+  font-weight: 600;
+}
+
+.dividend {
+  min-width: 60px;
 }
 
 .row-label {
@@ -1120,11 +1135,9 @@ button {
   width: 3rem;
   height: 3rem;
   border-radius: 0.75rem;
-  background: var(--gradient-gold);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-gold);
 }
 
 .footer-logo svg {
