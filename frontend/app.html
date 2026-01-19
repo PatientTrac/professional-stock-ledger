@@ -3,1280 +3,468 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Preferred Stock Ledger Manager</title>
+  <title>AegisIQ Stock Ledger</title>
 
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    * { font-family: 'Inter', sans-serif; }
-    .hidden { display: none; }
-    .toast{position:fixed;top:20px;right:20px;padding:14px 18px;border-radius:10px;color:#fff;font-weight:600;z-index:9999;transform:translateX(120%);transition:.25s;max-width:420px}
-    .toast.show{transform:translateX(0)}
-    .toast.success{background:#16a34a}
-    .toast.error{background:#dc2626}
-    .toast.info{background:#2563eb}
-    .btn-loader{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,.35);border-radius:50%;border-top-color:#fff;animation:spin 1s linear infinite}
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998}
-    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
-  </style>
+  <!-- App Styles -->
+  <link rel="stylesheet" href="app.css">
 </head>
-
-<body class="bg-gray-50 min-h-screen">
-  <div id="toast-container"></div>
-
-  <script>
-    // =========================
-    // CONFIG
-    // =========================
-    const API_CONFIG = {
-      BASE_URL: '/api',
-      ENDPOINTS: {
-        AUTH: '/auth',
-        LEDGER: '/ledger',
-        ENTITIES: '/entities',
-        STOCK_TYPES: '/stockTypes' // NEW
-      }
-    };
-
-    // =========================
-    // UI HELPERS
-    // =========================
-    function showToast(message, type='info', duration=3000){
-      const c=document.getElementById('toast-container');
-      const t=document.createElement('div');
-      t.className=`toast ${type}`;
-      t.textContent=message;
-      c.appendChild(t);
-      setTimeout(()=>t.classList.add('show'),10);
-      setTimeout(()=>{t.classList.remove('show');setTimeout(()=>c.removeChild(t),250)},duration);
-    }
-
-    function setButtonLoading(buttonId, isLoading){
-      const btn=document.getElementById(buttonId);
-      const loader=document.getElementById(`${buttonId}-loader`);
-      if(btn) btn.disabled=isLoading;
-      if(loader) loader.classList.toggle('hidden', !isLoading);
-    }
-
-    function qs(obj){
-      const params = new URLSearchParams();
-      Object.entries(obj || {}).forEach(([k,v])=>{
-        if(v === undefined || v === null || v === '') return;
-        params.set(k, String(v));
-      });
-      return params.toString();
-    }
-
-    function openModal(id){ document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
-
-    function escapeHtml(s){
-      return String(s ?? '')
-        .replaceAll('&','&amp;')
-        .replaceAll('<','&lt;')
-        .replaceAll('>','&gt;')
-        .replaceAll('"','&quot;')
-        .replaceAll("'","&#039;");
-    }
-
-    // =========================
-    // STORAGE + SESSION
-    // =========================
-    function getToken(){ return localStorage.getItem('token'); }
-    function getUser(){
-      const raw = localStorage.getItem('user');
-      return raw ? JSON.parse(raw) : null;
-    }
-    function setSession(token, user){
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-    }
-    function clearSession(){
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    }
-
-    function isSuperAdmin(){
-      const u = getUser();
-      return (u?.role || '').toUpperCase() === 'SUPER_ADMIN';
-    }
-
-    // =========================
-    // API HELPERS
-    // =========================
-    async function authRequest(action, payload = null) {
-      const token = getToken();
-      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AUTH}?action=${encodeURIComponent(action)}`;
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type':'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify(payload || {})
-      });
-
-      const ct = res.headers.get('content-type') || '';
-      const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
-
-      if (!res.ok || data.success === false) throw new Error(data.error || data.message || `Request failed (${res.status})`);
-      return data;
-    }
-
-    async function ledgerGet(action, params = {}) {
-      const token = getToken();
-      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LEDGER}?${qs({ action, ...params })}`;
-
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
-      });
-
-      const ct = res.headers.get('content-type') || '';
-      const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
-
-      if (!res.ok || data.success === false) throw new Error(data.error || data.message || `Request failed (${res.status})`);
-      return data;
-    }
-
-    async function ledgerPost(action, payload = {}) {
-      const token = getToken();
-      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LEDGER}?action=${encodeURIComponent(action)}`;
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type':'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify(payload || {})
-      });
-
-      const ct = res.headers.get('content-type') || '';
-      const data = ct.includes('application/json') ? await res.json() : { success:false, error: await res.text() };
-
-      if (!res.ok || data.success === false) throw new Error(data.error || data.message || `Request failed (${res.status})`);
-      return data;
-    }
-
-    async function entitiesList() {
-      const token = getToken();
-      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENTITIES}?${qs({ action:'list' })}`;
-
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
-      });
-
-      const ct = res.headers.get('content-type') || '';
-      if (!res.ok || !ct.includes('application/json')) return null;
-
-      const data = await res.json();
-      if (data.success === false) return null;
-      return data;
-    }
-
-    // =========================
-    // STOCK TYPES (NEW)
-    // =========================
-    async function stockTypesList(entityId){
-      const token = getToken();
-      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.STOCK_TYPES}?${qs({ action:'list-types', entity_id: entityId })}`;
-
-      const res = await fetch(url, { method:'GET', headers:{ ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
-      const ct = res.headers.get('content-type') || '';
-      if (!res.ok || !ct.includes('application/json')) return null;
-      const data = await res.json();
-      if (data.success === false) return null;
-      return data;
-    }
-
-    async function stockSeriesList(entityStockTypeId){
-      const token = getToken();
-      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.STOCK_TYPES}?${qs({ action:'list-series', entity_stock_type_id: entityStockTypeId })}`;
-
-      const res = await fetch(url, { method:'GET', headers:{ ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
-      const ct = res.headers.get('content-type') || '';
-      if (!res.ok || !ct.includes('application/json')) return null;
-      const data = await res.json();
-      if (data.success === false) return null;
-      return data;
-    }
-
-    // =========================
-    // AUTH UI
-    // =========================
-    function showLoginPage(){
-      document.getElementById('login-page').classList.remove('hidden');
-      document.getElementById('register-page').classList.add('hidden');
-    }
-    function showRegisterPage(){
-      document.getElementById('register-page').classList.remove('hidden');
-      document.getElementById('login-page').classList.add('hidden');
-    }
-
-    async function handleLogin(e){
-      e.preventDefault();
-      setButtonLoading('login-btn', true);
-      try {
-        const email=document.getElementById('login-email').value;
-        const password=document.getElementById('login-password').value;
-
-        const data = await authRequest('login', { email, password });
-        setSession(data.token, data.user);
-
-        showToast('Login successful', 'success');
-        showApp();
-        await initApp();
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        setButtonLoading('login-btn', false);
-      }
-    }
-
-    async function handleRegister(e){
-      e.preventDefault();
-      setButtonLoading('register-btn', true);
-      try {
-        const full_name=document.getElementById('register-name').value;
-        const email=document.getElementById('register-email').value;
-        const password=document.getElementById('register-password').value;
-
-        const data = await authRequest('register', { full_name, email, password });
-
-        if (data.token) {
-          setSession(data.token, data.user);
-          showToast('Registered + logged in!', 'success');
-          showApp();
-          await initApp();
-        } else {
-          showToast('Registration successful. Please login.', 'success');
-          showLoginPage();
-        }
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        setButtonLoading('register-btn', false);
-      }
-    }
-
-    async function logout(){
-      setButtonLoading('logout-btn', true);
-      try { await authRequest('logout', {}); } catch(_) {}
-      clearSession();
-      showAuth();
-      showToast('Logged out', 'info');
-      setButtonLoading('logout-btn', false);
-    }
-
-    function showApp(){
-      const u = getUser();
-      document.getElementById('auth-container').classList.add('hidden');
-      document.getElementById('app-container').classList.remove('hidden');
-      document.getElementById('username').textContent = u?.full_name || u?.email || '';
-    }
-
-    function showAuth(){
-      document.getElementById('app-container').classList.add('hidden');
-      document.getElementById('auth-container').classList.remove('hidden');
-    }
-
-    // =========================
-    // APP STATE
-    // =========================
-    let appState = {
-      entities: [],
-      selectedEntityId: '',
-      selectedStockTypeId: '',        // entity_stock_types.id
-      selectedStockTypeCode: '',      // COMMON/PREFERRED/WARRANT etc
-      selectedSeries: '',
-      selectedStatus: 'ACTIVE',
-      search: '',
-      stockTypes: [],
-      seriesByTypeId: {}
-    };
-
-    function getActiveEntityId(){
-      const u = getUser();
-      return isSuperAdmin()
-        ? (appState.selectedEntityId || (u?.entity_id ? String(u.entity_id) : ''))
-        : (u?.entity_id ? String(u.entity_id) : '');
-    }
-
-    async function loadEntityDropdown(){
-      const u = getUser();
-      const entitySelectWrap = document.getElementById('entity-filter-wrap');
-      const entitySelect = document.getElementById('filter-entity');
-
-      if (!isSuperAdmin()) {
-        entitySelectWrap.classList.add('hidden');
-        appState.selectedEntityId = u?.entity_id ? String(u.entity_id) : '';
-        return;
-      }
-
-      entitySelectWrap.classList.remove('hidden');
-
-      const data = await entitiesList();
-      if (data && Array.isArray(data.entities)) {
-        appState.entities = data.entities;
-      } else {
-        appState.entities = [{
-          id: u?.entity_id,
-          name: u?.entity_name || `Entity ${u?.entity_id}`,
-          is_active: true
-        }];
-      }
-
-      entitySelect.innerHTML = '';
-      appState.entities.forEach(ent=>{
-        const opt = document.createElement('option');
-        opt.value = String(ent.id);
-        opt.textContent = ent.name || `Entity ${ent.id}`;
-        entitySelect.appendChild(opt);
-      });
-
-      appState.selectedEntityId = entitySelect.value || (u?.entity_id ? String(u.entity_id) : '');
-    }
-
-    // =========================
-    // STOCK TYPE + SERIES DROPDOWNS
-    // =========================
-    function fallbackStockTypes(){
-      return [
-        { id: 'COMMON', stock_type: 'COMMON', display_name: 'Common', supports_series: false, is_active: true },
-        { id: 'PREFERRED', stock_type: 'PREFERRED', display_name: 'Preferred', supports_series: true, is_active: true }
-      ];
-    }
-
-    function resetSeriesDropdown(targetSelectId, placeholderText){
-      const sel = document.getElementById(targetSelectId);
-      sel.disabled = true;
-      sel.innerHTML = `<option value="">${placeholderText || 'Series (n/a)'}</option>`;
-      sel.value = '';
-    }
-
-    async function loadStockTypesForEntity(entityId){
-      const data = await stockTypesList(entityId);
-      if (data && Array.isArray(data.stock_types) && data.stock_types.length) {
-        appState.stockTypes = data.stock_types.filter(x => x.is_active !== false);
-        return;
-      }
-      appState.stockTypes = fallbackStockTypes();
-    }
-
-    function populateStockTypeSelect(selectId, includeAllOption){
-      const sel = document.getElementById(selectId);
-      const prevValue = sel.value;
-
-      sel.innerHTML = '';
-      if (includeAllOption) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'All';
-        sel.appendChild(opt);
-      }
-
-      appState.stockTypes.forEach(st=>{
-        const opt = document.createElement('option');
-        opt.value = String(st.id);
-        opt.textContent = st.display_name || st.stock_type || st.id;
-        sel.appendChild(opt);
-      });
-
-      if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
-        sel.value = prevValue;
-      } else {
-        sel.value = includeAllOption ? '' : (sel.options[0]?.value || '');
-      }
-    }
-
-    function getStockTypeById(id){
-      return appState.stockTypes.find(st => String(st.id) === String(id)) || null;
-    }
-
-    async function populateSeriesSelectForType(selectId, entityStockTypeId, includeAllOption){
-      const st = getStockTypeById(entityStockTypeId);
-      const seriesSelect = document.getElementById(selectId);
-
-      if (!st || !st.supports_series) {
-        resetSeriesDropdown(selectId, 'Series (n/a)');
-        return;
-      }
-
-      if (!appState.seriesByTypeId[String(entityStockTypeId)]) {
-        const data = await stockSeriesList(entityStockTypeId);
-        const list = (data && Array.isArray(data.series)) ? data.series.filter(x=>x.is_active !== false) : [];
-        appState.seriesByTypeId[String(entityStockTypeId)] = list;
-      }
-
-      const seriesList = appState.seriesByTypeId[String(entityStockTypeId)];
-      seriesSelect.disabled = false;
-      seriesSelect.innerHTML =
-        (includeAllOption ? `<option value="">All Series</option>` : `<option value="">Select Series</option>`) +
-        seriesList.map(s => `<option value="${escapeHtml(s.series)}">${escapeHtml(s.series)}</option>`).join('');
-    }
-
-    function syncSelectedStockTypeState(fromSelectId){
-      const val = document.getElementById(fromSelectId).value;
-      if (!val) {
-        appState.selectedStockTypeId = '';
-        appState.selectedStockTypeCode = '';
-        return;
-      }
-      const st = getStockTypeById(val);
-      appState.selectedStockTypeId = String(val);
-      appState.selectedStockTypeCode = (st?.stock_type || String(val)).toUpperCase();
-    }
-
-    // =========================
-    // GRID
-    // =========================
-    async function refreshShareholderGrid(){
-      const loading = document.getElementById('grid-loading');
-      const empty = document.getElementById('grid-empty');
-      const tbody = document.getElementById('grid-body');
-
-      loading.classList.remove('hidden');
-      empty.classList.add('hidden');
-      tbody.innerHTML = '';
-
-      try {
-        const entityId = getActiveEntityId();
-
-        const params = {
-          entity_id: entityId,
-          stock_type: appState.selectedStockTypeCode,
-          series: appState.selectedSeries,
-          status: appState.selectedStatus
-        };
-
-        const data = await ledgerGet('ownership', params);
-        const rows = Array.isArray(data.ownership) ? data.ownership : [];
-
-        if (appState.selectedStockTypeId) {
-          await populateSeriesSelectForType('filter-series', appState.selectedStockTypeId, true);
-        } else {
-          resetSeriesDropdown('filter-series', 'Series (select stock type)');
-        }
-
-        const q = (appState.search || '').trim().toLowerCase();
-        const filtered = q
-          ? rows.filter(r => (
-              String(r.full_name || '').toLowerCase().includes(q) ||
-              String(r.email || '').toLowerCase().includes(q) ||
-              String(r.tax_id || '').toLowerCase().includes(q)
-            ))
-          : rows;
-
-        renderShareholderGrid(filtered);
-        loading.classList.add('hidden');
-        if (!filtered.length) empty.classList.remove('hidden');
-      } catch (e) {
-        loading.classList.add('hidden');
-        empty.classList.remove('hidden');
-        showToast(e.message || 'Failed to load grid', 'error');
-      }
-    }
-
-    function renderShareholderGrid(rows){
-      const tbody = document.getElementById('grid-body');
-      tbody.innerHTML = (rows || []).map(r=>{
-        const statusPill = (r.status || '').toUpperCase() === 'ACTIVE'
-          ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">ACTIVE</span>`
-          : `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">INACTIVE</span>`;
-
-        const stockCode = (r.stock_type || '').toUpperCase();
-        const stockPill =
-          stockCode === 'PREFERRED'
-            ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">PREFERRED</span>`
-            : (stockCode === 'WARRANT' || stockCode === 'WARRANTS')
-              ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">WARRANT</span>`
-              : `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">COMMON</span>`;
-
-        const shares = Number(r.current_shares || 0);
-        const sharesFmt = isFinite(shares) ? shares.toLocaleString() : '0';
-
-        const sid = String(r.shareholder_id || r.id || '');
-
-        return `
-          <tr class="hover:bg-gray-50">
-            <td class="p-3 font-semibold text-gray-900">${escapeHtml(r.full_name || '')}</td>
-            <td class="p-3 text-gray-700">${escapeHtml(r.email || '')}</td>
-            <td class="p-3 text-gray-700">${escapeHtml(r.shareholder_type || '')}</td>
-            <td class="p-3">${stockPill}</td>
-            <td class="p-3 text-gray-700">${escapeHtml(r.series || (stockCode==='PREFERRED' || stockCode==='WARRANT' ? '' : '-'))}</td>
-            <td class="p-3 font-semibold text-gray-900">${sharesFmt}</td>
-            <td class="p-3">${statusPill}</td>
-            <td class="p-3 text-right">
-              <button class="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-black"
-                onclick="openActions('${sid}','${escapeHtml(r.full_name || '')}','${escapeHtml(r.stock_type || '')}','${escapeHtml(r.series || '')}')">
-                Actions
-              </button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    // =========================
-    // CREATE SHAREHOLDER
-    // =========================
-    function openCreateShareholder(){
-      document.getElementById('cs-full-name').value = '';
-      document.getElementById('cs-email').value = '';
-      document.getElementById('cs-phone').value = '';
-      document.getElementById('cs-external-id').value = '';
-      document.getElementById('cs-tax-id').value = '';
-      document.getElementById('cs-shareholder-type').value = 'INDIVIDUAL';
-      document.getElementById('cs-address').value = '';
-      document.getElementById('cs-city').value = '';
-      document.getElementById('cs-state').value = '';
-      document.getElementById('cs-zip').value = '';
-      document.getElementById('cs-country').value = 'US';
-      openModal('modal-create-shareholder');
-    }
-
-    async function submitCreateShareholder(e){
-      e.preventDefault();
-      setButtonLoading('cs-btn', true);
-      try {
-        const u = getUser();
-        const payload = {
-          full_name: document.getElementById('cs-full-name').value.trim(),
-          email: document.getElementById('cs-email').value.trim() || null,
-          phone: document.getElementById('cs-phone').value.trim() || null,
-          external_id: document.getElementById('cs-external-id').value.trim() || null,
-          tax_id: document.getElementById('cs-tax-id').value.trim() || null,
-          shareholder_type: document.getElementById('cs-shareholder-type').value,
-          address: document.getElementById('cs-address').value.trim() || null,
-          city: document.getElementById('cs-city').value.trim() || null,
-          state: document.getElementById('cs-state').value.trim() || null,
-          zip_code: document.getElementById('cs-zip').value.trim() || null,
-          country: document.getElementById('cs-country').value.trim() || 'US',
-          entity_id: isSuperAdmin()
-            ? getActiveEntityId()
-            : (u?.entity_id ? String(u.entity_id) : null)
-        };
-
-        if (!payload.full_name) throw new Error('Full name is required');
-
-        await ledgerPost('create-shareholder', payload);
-        showToast('Shareholder created', 'success');
-        closeModal('modal-create-shareholder');
-        await refreshShareholderGrid();
-      } catch (err) {
-        showToast(err.message || 'Failed to create shareholder', 'error');
-      } finally {
-        setButtonLoading('cs-btn', false);
-      }
-    }
-
-    // =========================
-    // ACTIONS + MODALS
-    // =========================
-    let selectedRow = { shareholder_id:'', full_name:'', stock_type:'', series:'' };
-
-    async function applyStockTypeToDialog(selectId, seriesInputId, seriesHelpId){
-      const typeId = document.getElementById(selectId).value;
-      const st = getStockTypeById(typeId);
-
-      const typeCode = (st?.stock_type || typeId || '').toUpperCase();
-
-      const seriesEl = document.getElementById(seriesInputId);
-      const helpEl = document.getElementById(seriesHelpId);
-
-      if (st && st.supports_series) {
-        helpEl.textContent = 'Series required for this stock type (e.g., A, B, Seed).';
-        seriesEl.placeholder = 'e.g. A';
-        seriesEl.disabled = false;
-        return;
-      }
-
-      if (typeCode === 'PREFERRED' || typeCode === 'WARRANT' || typeCode === 'WARRANTS') {
-        helpEl.textContent = 'Series required for this stock type (e.g., A, B, Seed).';
-        seriesEl.placeholder = 'e.g. A';
-        seriesEl.disabled = false;
-      } else {
-        helpEl.textContent = 'Series not used for this stock type.';
-        seriesEl.value = '';
-        seriesEl.placeholder = 'n/a';
-        seriesEl.disabled = true;
-      }
-    }
-
-    async function openActions(shareholderId, fullName, stockType, series){
-      selectedRow = {
-        shareholder_id: shareholderId,
-        full_name: fullName,
-        stock_type: (stockType || '').toUpperCase(),
-        series: series || ''
-      };
-      document.getElementById('actions-title').textContent =
-        `Actions for: ${selectedRow.full_name || 'Shareholder'}`;
-
-      document.getElementById('issue-shareholder-id').value = selectedRow.shareholder_id || '';
-      document.getElementById('issue-date').valueAsDate = new Date();
-
-      document.getElementById('transfer-from-shareholder-id').value = selectedRow.shareholder_id || '';
-      document.getElementById('transfer-date').valueAsDate = new Date();
-
-      document.getElementById('cancel-shareholder-id').value = selectedRow.shareholder_id || '';
-      document.getElementById('cancel-date').valueAsDate = new Date();
-
-      const match = appState.stockTypes.find(st => (st.stock_type || '').toUpperCase() === selectedRow.stock_type);
-      const issueSel = document.getElementById('issue-stock-type');
-      const transferSel = document.getElementById('transfer-stock-type');
-      const cancelSel = document.getElementById('cancel-stock-type');
-
-      if (match) {
-        issueSel.value = String(match.id);
-        transferSel.value = String(match.id);
-        cancelSel.value = String(match.id);
-      } else {
-        issueSel.value = selectedRow.stock_type || 'COMMON';
-        transferSel.value = selectedRow.stock_type || 'COMMON';
-        cancelSel.value = selectedRow.stock_type || 'COMMON';
-      }
-
-      document.getElementById('issue-series').value = selectedRow.series || '';
-      document.getElementById('transfer-series').value = selectedRow.series || '';
-      document.getElementById('cancel-series').value = selectedRow.series || '';
-
-      await applyStockTypeToDialog('issue-stock-type','issue-series','issue-series-help');
-      await applyStockTypeToDialog('transfer-stock-type','transfer-series','transfer-series-help');
-      await applyStockTypeToDialog('cancel-stock-type','cancel-series','cancel-series-help');
-
-      openModal('modal-actions');
-    }
-
-    function openIssue(){ closeModal('modal-actions'); openModal('modal-issue'); }
-    function openTransfer(){ closeModal('modal-actions'); openModal('modal-transfer'); }
-    function openCancel(){ closeModal('modal-actions'); openModal('modal-cancel'); }
-    function openReverseSplit(){ showToast('Reverse Split dialog is next (server-side logic + audit trail)', 'info', 4500); }
-    function openReissue(){ showToast('Reissue dialog is next (certificate reissue + linking)', 'info', 4500); }
-
-    function stockTypeCodeFromDialogValue(val){
-      const st = getStockTypeById(val);
-      return (st?.stock_type || val || '').toUpperCase();
-    }
-
-    async function submitIssue(e){
-      e.preventDefault();
-      setButtonLoading('issue-btn', true);
-      try {
-        const u = getUser();
-        const stockTypeVal = document.getElementById('issue-stock-type').value;
-        const payload = {
-          shareholder_id: document.getElementById('issue-shareholder-id').value,
-          transaction_date: document.getElementById('issue-date').value,
-          stock_type: stockTypeCodeFromDialogValue(stockTypeVal),
-          series: document.getElementById('issue-series').value || null,
-          shares: document.getElementById('issue-shares').value,
-          certificate_number: document.getElementById('issue-cert').value || null,
-          notes: document.getElementById('issue-notes').value || null,
-          entity_id: isSuperAdmin()
-            ? getActiveEntityId()
-            : (u?.entity_id ? String(u.entity_id) : '')
-        };
-
-        await ledgerPost('issue-shares', payload);
-        showToast('Shares issued', 'success');
-        closeModal('modal-issue');
-        await refreshShareholderGrid();
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        setButtonLoading('issue-btn', false);
-      }
-    }
-
-    async function submitTransfer(e){
-      e.preventDefault();
-      setButtonLoading('transfer-btn', true);
-      try {
-        const u = getUser();
-        const stockTypeVal = document.getElementById('transfer-stock-type').value;
-        const payload = {
-          from_shareholder_id: document.getElementById('transfer-from-shareholder-id').value,
-          to_shareholder_id: document.getElementById('transfer-to-shareholder-id').value,
-          transaction_date: document.getElementById('transfer-date').value,
-          stock_type: stockTypeCodeFromDialogValue(stockTypeVal),
-          series: document.getElementById('transfer-series').value || null,
-          shares: document.getElementById('transfer-shares').value,
-          certificate_number: document.getElementById('transfer-cert').value || null,
-          notes: document.getElementById('transfer-notes').value || null,
-          entity_id: isSuperAdmin()
-            ? getActiveEntityId()
-            : (u?.entity_id ? String(u.entity_id) : '')
-        };
-
-        await ledgerPost('transfer-shares', payload);
-        showToast('Shares transferred', 'success');
-        closeModal('modal-transfer');
-        await refreshShareholderGrid();
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        setButtonLoading('transfer-btn', false);
-      }
-    }
-
-    async function submitCancel(e){
-      e.preventDefault();
-      setButtonLoading('cancel-btn', true);
-      try {
-        const u = getUser();
-        const stockTypeVal = document.getElementById('cancel-stock-type').value;
-        const payload = {
-          shareholder_id: document.getElementById('cancel-shareholder-id').value,
-          transaction_date: document.getElementById('cancel-date').value,
-          stock_type: stockTypeCodeFromDialogValue(stockTypeVal),
-          series: document.getElementById('cancel-series').value || null,
-          shares: document.getElementById('cancel-shares').value,
-          certificate_number: document.getElementById('cancel-cert').value || null,
-          notes: document.getElementById('cancel-notes').value || null,
-          entity_id: isSuperAdmin()
-            ? getActiveEntityId()
-            : (u?.entity_id ? String(u.entity_id) : '')
-        };
-
-        await ledgerPost('cancel-shares', payload);
-        showToast('Shares cancelled', 'success');
-        closeModal('modal-cancel');
-        await refreshShareholderGrid();
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        setButtonLoading('cancel-btn', false);
-      }
-    }
-
-    // =========================
-    // INIT
-    // =========================
-    async function initApp(){
-      const u = getUser();
-      if (!u) return;
-
-      await loadEntityDropdown();
-
-      await loadStockTypesForEntity(getActiveEntityId());
-
-      populateStockTypeSelect('filter-stock-type', true);
-      populateStockTypeSelect('issue-stock-type', false);
-      populateStockTypeSelect('transfer-stock-type', false);
-      populateStockTypeSelect('cancel-stock-type', false);
-
-      document.getElementById('filter-status').value = 'ACTIVE';
-      resetSeriesDropdown('filter-series', 'Series (select stock type)');
-
-      document.getElementById('filter-stock-type').addEventListener('change', async ()=>{
-        syncSelectedStockTypeState('filter-stock-type');
-        appState.selectedSeries = '';
-        document.getElementById('filter-series').value = '';
-
-        if (!appState.selectedStockTypeId) {
-          resetSeriesDropdown('filter-series', 'Series (select stock type)');
-        } else {
-          await populateSeriesSelectForType('filter-series', appState.selectedStockTypeId, true);
-        }
-
-        await refreshShareholderGrid();
-      });
-
-      document.getElementById('filter-series').addEventListener('change', async (e)=>{
-        appState.selectedSeries = e.target.value;
-        await refreshShareholderGrid();
-      });
-
-      document.getElementById('filter-status').addEventListener('change', async (e)=>{
-        appState.selectedStatus = e.target.value;
-        await refreshShareholderGrid();
-      });
-
-      const searchInput = document.getElementById('filter-search');
-      let searchTimer = null;
-      searchInput.addEventListener('input', ()=>{
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(async ()=>{
-          appState.search = searchInput.value;
-          await refreshShareholderGrid();
-        }, 200);
-      });
-
-      const entitySelect = document.getElementById('filter-entity');
-      entitySelect.addEventListener('change', async (e)=>{
-        appState.selectedEntityId = e.target.value;
-
-        appState.seriesByTypeId = {};
-        await loadStockTypesForEntity(getActiveEntityId());
-
-        populateStockTypeSelect('filter-stock-type', true);
-        populateStockTypeSelect('issue-stock-type', false);
-        populateStockTypeSelect('transfer-stock-type', false);
-        populateStockTypeSelect('cancel-stock-type', false);
-
-        appState.selectedStockTypeId = '';
-        appState.selectedStockTypeCode = '';
-        appState.selectedSeries = '';
-        document.getElementById('filter-stock-type').value = '';
-        resetSeriesDropdown('filter-series', 'Series (select stock type)');
-
-        await refreshShareholderGrid();
-      });
-
-      document.getElementById('issue-stock-type').addEventListener('change', async ()=>{
-        await applyStockTypeToDialog('issue-stock-type','issue-series','issue-series-help');
-      });
-      document.getElementById('transfer-stock-type').addEventListener('change', async ()=>{
-        await applyStockTypeToDialog('transfer-stock-type','transfer-series','transfer-series-help');
-      });
-      document.getElementById('cancel-stock-type').addEventListener('change', async ()=>{
-        await applyStockTypeToDialog('cancel-stock-type','cancel-series','cancel-series-help');
-      });
-
-      appState.selectedStatus = document.getElementById('filter-status').value;
-      appState.search = '';
-      appState.selectedStockTypeId = '';
-      appState.selectedStockTypeCode = '';
-      appState.selectedSeries = '';
-
-      await refreshShareholderGrid();
-    }
-
-    document.addEventListener('DOMContentLoaded', async () => {
-      const token = getToken();
-      const user = getUser();
-      if (token && user) {
-        showApp();
-        await initApp();
-      } else {
-        showAuth();
-      }
-    });
-  </script>
-
-  <!-- AUTH -->
-  <div id="auth-container" class="min-h-screen flex items-center justify-center p-4">
-    <div class="max-w-md w-full">
-      <div class="text-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800 mb-2">📊 Preferred Stock Ledger</h1>
-        <p class="text-gray-600">Login / Register</p>
+<body>
+
+<!-- ================= HEADER ================= -->
+<header class="header">
+  <nav class="nav-container">
+    <div class="nav-content">
+      <img src="logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
+      
+      <!-- Desktop Navigation -->
+      <div class="nav-links">
+        <a href="#" class="nav-link active">Ledger</a>
+        <a href="#" class="nav-link">Reports</a>
+        <a href="#" class="nav-link">Audit</a>
       </div>
 
-      <div id="login-page" class="bg-white rounded-2xl shadow p-6">
-        <h2 class="text-xl font-bold mb-4">Login</h2>
-        <form onsubmit="handleLogin(event)" class="space-y-4">
-          <input id="login-email" type="email" required placeholder="Email" class="w-full p-3 border rounded-lg" />
-          <input id="login-password" type="password" required placeholder="Password" class="w-full p-3 border rounded-lg" />
-          <button id="login-btn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold">
-            Login <span id="login-btn-loader" class="btn-loader ml-2 hidden"></span>
-          </button>
-        </form>
-        <div class="mt-4 text-center">
-          <button type="button" onclick="showRegisterPage()" class="text-blue-600 font-semibold">Create account</button>
-        </div>
+      <!-- Auth Buttons -->
+      <div class="auth-buttons">
+        <button class="btn btn-ghost" onclick="logout()">Logout</button>
       </div>
 
-      <div id="register-page" class="bg-white rounded-2xl shadow p-6 hidden">
-        <h2 class="text-xl font-bold mb-4">Register</h2>
-        <form onsubmit="handleRegister(event)" class="space-y-4">
-          <input id="register-name" type="text" required placeholder="Full name" class="w-full p-3 border rounded-lg" />
-          <input id="register-email" type="email" required placeholder="Email" class="w-full p-3 border rounded-lg" />
-          <input id="register-password" type="password" required placeholder="Password" class="w-full p-3 border rounded-lg" />
-          <button id="register-btn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold">
-            Register <span id="register-btn-loader" class="btn-loader ml-2 hidden"></span>
-          </button>
-        </form>
-        <div class="mt-4 text-center">
-          <button type="button" onclick="showLoginPage()" class="text-blue-600 font-semibold">Back to login</button>
-        </div>
+      <!-- Mobile Menu Toggle -->
+      <button class="mobile-menu-toggle" id="mobileMenuToggle">
+        <svg class="menu-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div class="mobile-menu hidden" id="mobileMenu">
+      <a href="#" class="mobile-nav-link">Ledger</a>
+      <a href="#" class="mobile-nav-link">Reports</a>
+      <a href="#" class="mobile-nav-link">Audit</a>
+      <div class="mobile-auth">
+        <button class="btn btn-outline full-width" onclick="logout()">Logout</button>
       </div>
     </div>
-  </div>
+  </nav>
+</header>
 
-  <!-- APP -->
-  <div id="app-container" class="hidden">
-    <!-- STEP 4 CHANGE: add Home link to "/" -->
-    <nav class="bg-white shadow px-6 py-4 flex justify-between items-center">
-      <div class="flex items-center gap-4">
-        <a href="/" class="text-sm font-semibold text-gray-700 hover:text-blue-600">Home</a>
-        <div class="font-bold text-xl">📊 Preferred Stock Ledger</div>
-      </div>
-
-      <div class="flex items-center gap-4">
-        <span id="username" class="font-semibold text-gray-700"></span>
-        <button id="logout-btn" onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold">
-          Logout <span id="logout-btn-loader" class="btn-loader ml-2 hidden"></span>
-        </button>
-      </div>
-    </nav>
-
-    <div class="max-w-7xl mx-auto p-6 space-y-4">
-      <!-- Filters -->
-      <div class="bg-white rounded-2xl shadow p-5">
-        <div class="flex flex-col gap-4">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <div class="flex items-center gap-2">
-              <div class="text-lg font-bold text-gray-900">Shareholder Grid</div>
-              <div class="text-sm text-gray-500">Ownership view (by stock type / series)</div>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <button onclick="openCreateShareholder()"
-                class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
-                + New Shareholder
-              </button>
-
-              <button onclick="refreshShareholderGrid()"
-                class="px-4 py-2 rounded-lg bg-gray-900 text-white font-semibold hover:bg-black">
-                Refresh
-              </button>
-            </div>
+<!-- ================= MAIN APP ================= -->
+<main>
+  <section class="section-container">
+    <div class="app-shell">
+      
+      <!-- Page Header -->
+      <div class="page-header">
+        <div class="page-header-text">
+          <h1 class="app-title">
+            Holdings <span class="text-gold">Matrix</span>
+          </h1>
+          <p class="app-subtitle">
+            Entity-scoped, auditable ownership records
+          </p>
+        </div>
+        <div class="page-header-stats">
+          <div class="stat-badge">
+            <span class="stat-label">Total Shareholders</span>
+            <span class="stat-value" id="totalShareholdersCount">0</span>
           </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-            <div id="entity-filter-wrap" class="md:col-span-3 hidden">
-              <label class="text-xs font-semibold text-gray-600">Entity</label>
-              <select id="filter-entity" class="w-full mt-1 p-2.5 border rounded-lg"></select>
-            </div>
-
-            <div class="md:col-span-3">
-              <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-              <select id="filter-stock-type" class="w-full mt-1 p-2.5 border rounded-lg"></select>
-            </div>
-
-            <div class="md:col-span-3">
-              <label class="text-xs font-semibold text-gray-600">Series</label>
-              <select id="filter-series" class="w-full mt-1 p-2.5 border rounded-lg" disabled>
-                <option value="">Series (select stock type)</option>
-              </select>
-            </div>
-
-            <div class="md:col-span-3">
-              <label class="text-xs font-semibold text-gray-600">Status</label>
-              <select id="filter-status" class="w-full mt-1 p-2.5 border rounded-lg">
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-                <option value="">All</option>
-              </select>
-            </div>
-
-            <div class="md:col-span-12">
-              <label class="text-xs font-semibold text-gray-600">Search</label>
-              <input id="filter-search" class="w-full mt-1 p-2.5 border rounded-lg"
-                placeholder="Search name, email, tax ID..." />
-            </div>
+          <div class="stat-badge">
+            <span class="stat-label">Total Shares</span>
+            <span class="stat-value" id="totalSharesCount">0</span>
           </div>
         </div>
       </div>
 
-      <!-- Grid -->
-      <div class="bg-white rounded-2xl shadow overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-gray-100">
+      <!-- ================= FILTER BAR ================= -->
+      <div class="filters-container card">
+        <div class="filter-group">
+          <div class="search-wrapper">
+            <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Search ID or name..." oninput="applyFilters()" />
+          </div>
+          
+          <select id="entityFilter" onchange="applyFilters()">
+            <option value="">All Entities</option>
+          </select>
+          
+          <select id="stockTypeFilter" onchange="handleStockTypeChange()">
+            <option value="">All Stock Types</option>
+          </select>
+          
+          <select id="seriesFilter" onchange="applyFilters()">
+            <option value="">All Series</option>
+          </select>
+          
+          <select id="statusFilter" onchange="applyFilters()">
+            <option value="">All Status</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </div>
+        
+        <div class="filter-actions">
+          <button class="btn btn-ghost" onclick="resetFilters()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18"></path>
+            </svg>
+            Reset
+          </button>
+          <button class="btn btn-primary" onclick="exportCSV()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Export CSV
+          </button>
+          <button class="btn btn-gold" onclick="openCreateShareholderModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Add Shareholder
+          </button>
+        </div>
+      </div>
+
+      <!-- ================= HOLDINGS MATRIX - DARK EXECUTIVE ================= -->
+      <div class="card holdings-matrix">
+
+        <!-- HEADER -->
+        <div class="matrix-header">
+          <div class="matrix-cell expand-toggle"></div>
+          <div class="matrix-cell account-col">Account #</div>
+          <div class="matrix-cell name-col">Shareholder Name</div>
+          <div class="matrix-cell address-col">Address</div>
+          <div class="matrix-cell common-col">Common</div>
+          <div class="matrix-cell series-col">Series A</div>
+          <div class="matrix-cell series-col">Series B</div>
+          <div class="matrix-cell total-col">Total Shares</div>
+          <div class="matrix-cell pct-col">%</div>
+          <div class="matrix-cell actions-col"></div>
+        </div>
+
+        <!-- BODY - Populated by JS -->
+        <div class="matrix-body" id="holdingsMatrixBody"></div>
+
+        <!-- FOOTER TOTALS -->
+        <div class="matrix-footer" id="holdingsMatrixFooter">
+          <div class="matrix-cell expand-toggle"></div>
+          <div class="matrix-cell account-col"></div>
+          <div class="matrix-cell name-col">TOTALS</div>
+          <div class="matrix-cell address-col"></div>
+          <div class="matrix-cell common-col" id="footerCommon">0</div>
+          <div class="matrix-cell series-col" id="footerSeriesA">0</div>
+          <div class="matrix-cell series-col" id="footerSeriesB">0</div>
+          <div class="matrix-cell total-col" id="footerTotal">0</div>
+          <div class="matrix-cell pct-col">100%</div>
+          <div class="matrix-cell actions-col"></div>
+        </div>
+
+      </div>
+
+<!-- ================= TWO-PANE DETAIL DRAWER ================= -->
+<div class="drawer-overlay" id="detailDrawer">
+  <div class="drawer dark-exec">
+
+    <!-- LEFT -->
+    <aside class="drawer-left">
+      <div class="drawer-profile">
+        <div class="avatar">JH</div>
+        <div>
+          <div class="drawer-name" id="drawerName">Jane Holder</div>
+          <div class="drawer-sub">Shareholder · SH-0012</div>
+        </div>
+      </div>
+
+      <div class="drawer-meta">
+        <div class="meta-label">Address</div>
+        <div class="meta-value" id="drawerAddress">
+          101 Market St, Miami, FL
+        </div>
+      </div>
+
+      <nav class="drawer-nav">
+        <button class="drawer-tab active" onclick="switchDrawerTab('holdings', event)">
+          Holdings
+        </button>
+        <button class="drawer-tab" onclick="switchDrawerTab('entries', event)">
+          Book Entries
+        </button>
+      </nav>
+    </aside>
+
+    <!-- RIGHT -->
+    <section class="drawer-right">
+
+      <!-- HOLDINGS -->
+      <div class="drawer-panel active" id="drawer-holdings">
+        <div class="drawer-section">
+          <div class="section-title">
+            Series A Preferred – 1,250,000 Shares
+          </div>
+          <table class="drawer-table">
+            <thead>
               <tr>
-                <th class="p-3 text-left text-xs font-bold text-gray-700">Shareholder</th>
-                <th class="p-3 text-left text-xs font-bold text-gray-700">Email</th>
-                <th class="p-3 text-left text-xs font-bold text-gray-700">Type</th>
-                <th class="p-3 text-left text-xs font-bold text-gray-700">Stock</th>
-                <th class="p-3 text-left text-xs font-bold text-gray-700">Series</th>
-                <th class="p-3 text-left text-xs font-bold text-gray-700">Shares</th>
-                <th class="p-3 text-left text-xs font-bold text-gray-700">Status</th>
-                <th class="p-3 text-right text-xs font-bold text-gray-700">Actions</th>
+                <th>Book Entry ID</th>
+                <th>Shares</th>
+                <th>Date</th>
+                <th>Status</th>
               </tr>
             </thead>
-            <tbody id="grid-body" class="divide-y"></tbody>
+            <tbody>
+              <tr>
+                <td>BE-10021</td>
+                <td>500,000</td>
+                <td>06/01/2025</td>
+                <td class="status-active">Active</td>
+              </tr>
+              <tr>
+                <td>BE-10088</td>
+                <td>750,000</td>
+                <td>09/15/2025</td>
+                <td class="status-active">Active</td>
+              </tr>
+            </tbody>
           </table>
         </div>
+      </div>
 
-        <div id="grid-loading" class="p-10 text-center hidden">
-          <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gray-900"></div>
-          <div class="mt-2 text-gray-600 font-semibold">Loading…</div>
-        </div>
-
-        <div id="grid-empty" class="p-10 text-center hidden">
-          <div class="text-gray-700 font-semibold">No results</div>
-          <div class="text-gray-500 text-sm mt-1">Try changing filters or search terms.</div>
+      <!-- ENTRIES -->
+      <div class="drawer-panel" id="drawer-entries">
+        <div class="empty-note">
+          Select a holding to view book entries.
         </div>
       </div>
-    </div>
 
-    <!-- CREATE SHAREHOLDER MODAL -->
-    <div id="modal-create-shareholder" class="hidden">
-      <div class="modal-backdrop" onclick="closeModal('modal-create-shareholder')"></div>
-      <div class="modal">
-        <div class="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-between">
-            <div class="font-bold text-gray-900">Create New Shareholder</div>
-            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-create-shareholder')">✕</button>
-          </div>
+    </section>
 
-          <form class="p-5 space-y-4" onsubmit="submitCreateShareholder(event)">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Full Name *</label>
-                <input id="cs-full-name" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Shareholder Type</label>
-                <select id="cs-shareholder-type" class="w-full mt-1 p-2.5 border rounded-lg">
-                  <option value="INDIVIDUAL">INDIVIDUAL</option>
-                  <option value="ENTITY">ENTITY</option>
-                </select>
-              </div>
-
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Email</label>
-                <input id="cs-email" type="email" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Phone</label>
-                <input id="cs-phone" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-
-              <div>
-                <label class="text-xs font-semibold text-gray-600">External ID</label>
-                <input id="cs-external-id" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Tax ID</label>
-                <input id="cs-tax-id" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-
-              <div class="md:col-span-2">
-                <label class="text-xs font-semibold text-gray-600">Address</label>
-                <input id="cs-address" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-
-              <div>
-                <label class="text-xs font-semibold text-gray-600">City</label>
-                <input id="cs-city" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">State</label>
-                <input id="cs-state" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-
-              <div>
-                <label class="text-xs font-semibold text-gray-600">ZIP</label>
-                <input id="cs-zip" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Country</label>
-                <input id="cs-country" value="US" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-              <button type="button" onclick="closeModal('modal-create-shareholder')" class="px-4 py-2 rounded-lg border font-semibold">Cancel</button>
-              <button id="cs-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700">
-                Create <span id="cs-btn-loader" class="btn-loader ml-2 hidden"></span>
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- ACTIONS MODAL -->
-    <div id="modal-actions" class="hidden">
-      <div class="modal-backdrop" onclick="closeModal('modal-actions')"></div>
-      <div class="modal">
-        <div class="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-between">
-            <div class="font-bold text-gray-900" id="actions-title">Actions</div>
-            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-actions')">✕</button>
-          </div>
-
-          <div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button onclick="openIssue()" class="p-4 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700">Issue</button>
-            <button onclick="openTransfer()" class="p-4 rounded-xl bg-gray-900 text-white font-bold hover:bg-black">Transfer</button>
-            <button onclick="openCancel()" class="p-4 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700">Cancel</button>
-            <button onclick="openReissue()" class="p-4 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600">Reissue (next)</button>
-            <button onclick="openReverseSplit()" class="p-4 rounded-xl bg-purple-600 text-white font-bold hover:bg-purple-700 sm:col-span-2">Reverse Split (next)</button>
-          </div>
-
-          <div class="p-5 border-t flex justify-end">
-            <button onclick="closeModal('modal-actions')" class="px-4 py-2 rounded-lg border font-semibold">Close</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ISSUE MODAL -->
-    <div id="modal-issue" class="hidden">
-      <div class="modal-backdrop" onclick="closeModal('modal-issue')"></div>
-      <div class="modal">
-        <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-between">
-            <div class="font-bold text-gray-900">Issue Shares</div>
-            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-issue')">✕</button>
-          </div>
-
-          <form class="p-5 space-y-3" onsubmit="submitIssue(event)">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Shareholder ID</label>
-                <input id="issue-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Transaction Date</label>
-                <input id="issue-date" type="date" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-                <select id="issue-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required></select>
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Series</label>
-                <input id="issue-series" class="w-full mt-1 p-2.5 border rounded-lg" placeholder="e.g. A" />
-                <div id="issue-series-help" class="text-xs text-gray-500 mt-1">Series not used for this stock type.</div>
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Shares</label>
-                <input id="issue-shares" type="number" step="0.0001" min="0" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Certificate #</label>
-                <input id="issue-cert" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-            </div>
-
-            <div>
-              <label class="text-xs font-semibold text-gray-600">Notes</label>
-              <textarea id="issue-notes" class="w-full mt-1 p-2.5 border rounded-lg" rows="3"></textarea>
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-              <button type="button" onclick="closeModal('modal-issue')" class="px-4 py-2 rounded-lg border font-semibold">Cancel</button>
-              <button id="issue-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700">
-                Issue <span id="issue-btn-loader" class="btn-loader ml-2 hidden"></span>
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- TRANSFER MODAL -->
-    <div id="modal-transfer" class="hidden">
-      <div class="modal-backdrop" onclick="closeModal('modal-transfer')"></div>
-      <div class="modal">
-        <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-between">
-            <div class="font-bold text-gray-900">Transfer Shares</div>
-            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-transfer')">✕</button>
-          </div>
-
-          <form class="p-5 space-y-3" onsubmit="submitTransfer(event)">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-semibold text-gray-600">From Shareholder ID</label>
-                <input id="transfer-from-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">To Shareholder ID</label>
-                <input id="transfer-to-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Transaction Date</label>
-                <input id="transfer-date" type="date" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Shares</label>
-                <input id="transfer-shares" type="number" step="0.0001" min="0" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-                <select id="transfer-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required></select>
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Series</label>
-                <input id="transfer-series" class="w-full mt-1 p-2.5 border rounded-lg" placeholder="e.g. A" />
-                <div id="transfer-series-help" class="text-xs text-gray-500 mt-1">Series not used for this stock type.</div>
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Certificate #</label>
-                <input id="transfer-cert" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Notes</label>
-                <input id="transfer-notes" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-              <button type="button" onclick="closeModal('modal-transfer')" class="px-4 py-2 rounded-lg border font-semibold">Cancel</button>
-              <button id="transfer-btn" class="px-4 py-2 rounded-lg bg-gray-900 text-white font-bold hover:bg-black">
-                Transfer <span id="transfer-btn-loader" class="btn-loader ml-2 hidden"></span>
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- CANCEL MODAL -->
-    <div id="modal-cancel" class="hidden">
-      <div class="modal-backdrop" onclick="closeModal('modal-cancel')"></div>
-      <div class="modal">
-        <div class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div class="p-5 border-b flex items-center justify-between">
-            <div class="font-bold text-gray-900">Cancel Shares</div>
-            <button class="text-gray-500 hover:text-gray-900 font-bold" onclick="closeModal('modal-cancel')">✕</button>
-          </div>
-
-          <form class="p-5 space-y-3" onsubmit="submitCancel(event)">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Shareholder ID</label>
-                <input id="cancel-shareholder-id" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Transaction Date</label>
-                <input id="cancel-date" type="date" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Stock Type</label>
-                <select id="cancel-stock-type" class="w-full mt-1 p-2.5 border rounded-lg" required></select>
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Series</label>
-                <input id="cancel-series" class="w-full mt-1 p-2.5 border rounded-lg" placeholder="e.g. A" />
-                <div id="cancel-series-help" class="text-xs text-gray-500 mt-1">Series not used for this stock type.</div>
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Shares</label>
-                <input id="cancel-shares" type="number" step="0.0001" min="0" class="w-full mt-1 p-2.5 border rounded-lg" required />
-              </div>
-              <div>
-                <label class="text-xs font-semibold text-gray-600">Certificate #</label>
-                <input id="cancel-cert" class="w-full mt-1 p-2.5 border rounded-lg" />
-              </div>
-            </div>
-
-            <div>
-              <label class="text-xs font-semibold text-gray-600">Notes</label>
-              <textarea id="cancel-notes" class="w-full mt-1 p-2.5 border rounded-lg" rows="3"></textarea>
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-              <button type="button" onclick="closeModal('modal-cancel')" class="px-4 py-2 rounded-lg border font-semibold">Cancel</button>
-              <button id="cancel-btn" class="px-4 py-2 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700">
-                Cancel Shares <span id="cancel-btn-loader" class="btn-loader ml-2 hidden"></span>
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
   </div>
+</div>
+
+    </div>
+  </section>
+</main>
+
+<!-- ================= MODALS ================= -->
+
+<!-- Create Shareholder Modal -->
+<div class="modal-overlay" id="createShareholderModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Create Shareholder</h2>
+      <button class="modal-close" onclick="closeModal('createShareholderModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <form id="createShareholderForm" onsubmit="submitCreateShareholder(event)">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="shareholderName" placeholder="Enter full name" required />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="shareholderEmail" placeholder="email@example.com" />
+        </div>
+        <div class="form-group">
+          <label>Tax ID</label>
+          <input type="text" id="shareholderTaxId" placeholder="XXX-XX-XXXX" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Address</label>
+        <input type="text" id="shareholderAddress" placeholder="Street address" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Entity</label>
+          <select id="shareholderEntity" required></select>
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="shareholderType" required>
+            <option value="INDIVIDUAL">Individual</option>
+            <option value="ENTITY">Entity</option>
+            <option value="TRUST">Trust</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('createShareholderModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Shareholder</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Issue Shares Modal -->
+<div class="modal-overlay" id="issueSharesModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Issue Shares</h2>
+      <button class="modal-close" onclick="closeModal('issueSharesModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <form id="issueSharesForm" onsubmit="submitIssueShares(event)">
+      <input type="hidden" id="issueShareholderId" />
+      <div class="form-group">
+        <label>Shareholder</label>
+        <input type="text" id="issueShareholderName" readonly class="readonly-input" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Stock Type</label>
+          <select id="issueStockType" onchange="updateIssueSeries()" required></select>
+        </div>
+        <div class="form-group">
+          <label>Series</label>
+          <select id="issueSeries"></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Shares</label>
+          <input type="number" id="issueShares" placeholder="Number of shares" min="1" required />
+        </div>
+        <div class="form-group">
+          <label>Issue Date</label>
+          <input type="date" id="issueDate" required />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Certificate #</label>
+          <input type="text" id="issueCertificate" placeholder="Optional" />
+        </div>
+        <div class="form-group">
+          <label>Price per Share</label>
+          <input type="number" id="issuePricePerShare" placeholder="0.00" step="0.01" min="0" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="issueNotes" placeholder="Optional notes..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('issueSharesModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Issue Shares</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Transfer Shares Modal -->
+<div class="modal-overlay" id="transferSharesModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Transfer Shares</h2>
+      <button class="modal-close" onclick="closeModal('transferSharesModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <form id="transferSharesForm" onsubmit="submitTransferShares(event)">
+      <input type="hidden" id="transferFromId" />
+      <div class="form-group">
+        <label>From Shareholder</label>
+        <input type="text" id="transferFromName" readonly class="readonly-input" />
+      </div>
+      <div class="form-group">
+        <label>To Shareholder</label>
+        <select id="transferToId" required></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Stock Type</label>
+          <select id="transferStockType" onchange="updateTransferSeries()" required></select>
+        </div>
+        <div class="form-group">
+          <label>Series</label>
+          <select id="transferSeries"></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Shares</label>
+          <input type="number" id="transferShares" placeholder="Number of shares" min="1" required />
+        </div>
+        <div class="form-group">
+          <label>Transfer Date</label>
+          <input type="date" id="transferDate" required />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('transferSharesModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Transfer Shares</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Book Entry Detail Drawer -->
+<div class="drawer-overlay" id="bookEntryDrawer">
+  <div class="drawer">
+    <div class="drawer-header">
+      <h2>Shareholder Details</h2>
+      <button class="drawer-close" onclick="closeDrawer()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="drawer-content" id="drawerContent">
+      <!-- Content will be injected -->
+    </div>
+  </div>
+</div>
+
+<!-- ================= TOAST CONTAINER ================= -->
+<div id="toastContainer"></div>
+
+<!-- ================= FOOTER ================= -->
+<footer class="footer">
+  <div class="footer-container">
+    <div class="footer-bottom">
+      <div class="footer-legal">
+        <span>© 2026 AegisIQ. All rights reserved.</span>
+        <span class="separator">|</span>
+        <a href="#">Terms of Service</a>
+        <span class="separator">|</span>
+        <a href="mailto:support@aegisiqstockledger.com">support@aegisiqstockledger.com</a>
+      </div>
+      <button class="back-to-top" onclick="scrollToTop()">
+        Back to Top
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="19" x2="12" y2="5"></line>
+          <polyline points="5 12 12 5 19 12"></polyline>
+        </svg>
+      </button>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
 </body>
 </html>
