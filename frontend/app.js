@@ -461,9 +461,10 @@ function updateStats() {
 }
 
 function logout() {
-  alert("Logout not implemented");
-}
-
-function logout() {
-  alert("Logout not implemented");
+  // Clear auth data from localStorage
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('user');
+  
+  // Redirect to login page
+  window.location.href = 'login.html';
 }
