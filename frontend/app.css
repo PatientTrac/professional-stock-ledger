@@ -111,7 +111,7 @@ body {
 }
 
 .logo-img {
-  height: 100px;
+  height: 80px;
   width: auto;
 }
 
@@ -142,7 +142,143 @@ body {
 
 .auth-buttons {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ===============================
+   User Dropdown
+================================ */
+.user-dropdown {
+  position: relative;
+}
+
+.user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 6px;
+  background: rgba(212, 175, 55, 0.08);
+  border: 1px solid var(--border-gold);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.user-trigger:hover {
+  background: rgba(212, 175, 55, 0.15);
+  border-color: var(--gold-500);
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--gold-500) 0%, var(--gold-600) 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--bg-app);
+  text-transform: uppercase;
+}
+
+.user-name {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-trigger .chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.user-dropdown.open .chevron {
+  transform: rotate(180deg);
+}
+
+/* User Dropdown Menu */
+.user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: all 0.2s ease;
+  z-index: 1000;
+}
+
+.user-dropdown.open .user-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.user-menu-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.user-menu-email {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.user-menu-role {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--gold-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.user-menu-divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.user-menu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.user-menu-item.danger {
+  color: var(--danger);
+}
+
+.user-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .mobile-menu-toggle {
@@ -279,6 +415,8 @@ main {
 }
 
 .filter-group {
+  display: flex;
+  gap: 12px;
   flex-wrap: wrap;
   flex: 1;
 }
