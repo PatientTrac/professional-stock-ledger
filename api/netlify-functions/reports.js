@@ -45,8 +45,8 @@ async function handleOwnershipReport(event, params) {
     
     const { 
         entity_id,
-        stock_type,
-        series,
+        entity_stock_type_id,
+        entity_stock_series_id,
         status,
         format = 'json'
     } = params;
@@ -62,7 +62,7 @@ async function handleOwnershipReport(event, params) {
     try {
         // Get entity information
         const entityResult = await query(`
-            SELECT name, legal_name, address, city, state, 
+            SELECT id, name, legal_name, address, city, state, 
                    country, zip_code, phone, email
             FROM entities
             WHERE id = $1
@@ -80,12 +80,69 @@ async function handleOwnershipReport(event, params) {
         }
         
         const entity = entityResult.rows[0];
+
+        // Get all active stock types for this entity (for dynamic columns)
+        const stockTypesResult = await query(`
+            SELECT est.id, est.stock_type, est.display_name, est.supports_series
+            FROM entity_stock_types est
+            WHERE est.entity_id = $1 AND est.is_active = TRUE
+            ORDER BY 
+                CASE est.stock_type 
+                    WHEN 'COMMON' THEN 1 
+                    WHEN 'PREFERRED' THEN 2 
+                    WHEN 'WARRANT' THEN 3 
+                    ELSE 4 
+                END
+        `, [targetEntityId]);
+
+        // Get all active series for this entity's stock types
+        const seriesResult = await query(`
+            SELECT ess.id, ess.entity_stock_type_id, ess.series, est.stock_type
+            FROM entity_stock_series ess
+            JOIN entity_stock_types est ON est.id = ess.entity_stock_type_id
+            WHERE est.entity_id = $1 AND ess.is_active = TRUE AND est.is_active = TRUE
+            ORDER BY est.stock_type, ess.series
+        `, [targetEntityId]);
         
-        // Get ownership data grouped by stock type and series
+        // Build column definitions for grid (stock_types + series)
+        const columns = [];
+        stockTypesResult.rows.forEach(st => {
+            if (st.supports_series) {
+                // Add series columns under this stock type
+                const seriesForType = seriesResult.rows.filter(s => s.entity_stock_type_id === st.id);
+                seriesForType.forEach(s => {
+                    columns.push({
+                        id: `${st.id}_${s.id}`,
+                        entity_stock_type_id: st.id,
+                        entity_stock_series_id: s.id,
+                        stock_type: st.stock_type,
+                        display_name: st.display_name,
+                        series: s.series,
+                        header: `${st.display_name} ${s.series}`,
+                        supports_series: true
+                    });
+                });
+            } else {
+                // No series - single column for this stock type
+                columns.push({
+                    id: `${st.id}_null`,
+                    entity_stock_type_id: st.id,
+                    entity_stock_series_id: null,
+                    stock_type: st.stock_type,
+                    display_name: st.display_name,
+                    series: null,
+                    header: st.display_name,
+                    supports_series: false
+                });
+            }
+        });
+
+        // Get ownership data grouped by shareholder, stock type, and series (using IDs)
         let queryText = `
             WITH shareholder_balances AS (
                 SELECT 
                     s.id as shareholder_id,
+                    s.external_id,
                     s.full_name,
                     s.address,
                     s.city,
@@ -97,8 +154,8 @@ async function handleOwnershipReport(event, params) {
                     s.phone,
                     s.shareholder_type,
                     s.is_active as shareholder_active,
-                    st.stock_type,
-                    st.series,
+                    st.entity_stock_type_id,
+                    st.entity_stock_series_id,
                     COALESCE(SUM(
                         CASE 
                             WHEN st.transaction_type = 'ISSUANCE' THEN st.shares
@@ -120,37 +177,33 @@ async function handleOwnershipReport(event, params) {
         const queryParams = [targetEntityId];
         let paramCount = 1;
         
-        if (stock_type) {
+        if (entity_stock_type_id) {
             paramCount++;
-            queryText += ` AND st.stock_type = $${paramCount}`;
-            queryParams.push(stock_type);
+            queryText += ` AND st.entity_stock_type_id = $${paramCount}`;
+            queryParams.push(entity_stock_type_id);
         }
         
-        if (series) {
+        if (entity_stock_series_id) {
             paramCount++;
-            queryText += ` AND st.series = $${paramCount}`;
-            queryParams.push(series);
+            queryText += ` AND st.entity_stock_series_id = $${paramCount}`;
+            queryParams.push(entity_stock_series_id);
         }
         
         queryText += `
-                GROUP BY s.id, st.stock_type, st.series
-                HAVING COALESCE(SUM(
-                    CASE 
-                        WHEN st.transaction_type = 'ISSUANCE' THEN st.shares
-                        WHEN st.transaction_type = 'TRANSFER' AND st.to_shareholder_id = s.id THEN st.shares
-                        WHEN st.transaction_type = 'TRANSFER' AND st.from_shareholder_id = s.id THEN -st.shares
-                        WHEN st.transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN -st.shares
-                        ELSE 0
-                    END
-                ), 0) > 0
+                GROUP BY s.id, st.entity_stock_type_id, st.entity_stock_series_id
             )
             SELECT 
                 sb.*,
+                est.stock_type,
+                est.display_name as stock_type_name,
+                ess.series,
                 CASE 
                     WHEN sb.current_shares > 0 THEN 'ACTIVE'
                     ELSE 'INACTIVE'
                 END as status
             FROM shareholder_balances sb
+            LEFT JOIN entity_stock_types est ON est.id = sb.entity_stock_type_id
+            LEFT JOIN entity_stock_series ess ON ess.id = sb.entity_stock_series_id
             WHERE 1=1
         `;
         
@@ -160,94 +213,111 @@ async function handleOwnershipReport(event, params) {
             queryText += ` AND sb.current_shares = 0`;
         }
         
-        queryText += ` ORDER BY sb.stock_type, sb.series, sb.full_name`;
+        queryText += ` ORDER BY sb.full_name, est.stock_type, ess.series`;
         
         const result = await query(queryText, queryParams);
         
-        // Group data by stock type and series for report structure
+        // Transform data into grid-friendly format: one row per shareholder with holdings per column
+        const shareholderMap = new Map();
+        
+        result.rows.forEach(row => {
+            if (!shareholderMap.has(row.shareholder_id)) {
+                shareholderMap.set(row.shareholder_id, {
+                    shareholder_id: row.shareholder_id,
+                    external_id: row.external_id,
+                    full_name: row.full_name,
+                    address: row.address,
+                    city: row.city,
+                    state: row.state,
+                    country: row.country,
+                    zip_code: row.zip_code,
+                    tax_id: row.tax_id,
+                    email: row.email,
+                    phone: row.phone,
+                    shareholder_type: row.shareholder_type,
+                    shareholder_active: row.shareholder_active,
+                    first_issue_date: row.first_issue_date,
+                    holdings: {},  // keyed by column id (entity_stock_type_id_entity_stock_series_id)
+                    total_shares: 0
+                });
+            }
+            
+            const sh = shareholderMap.get(row.shareholder_id);
+            const colKey = `${row.entity_stock_type_id}_${row.entity_stock_series_id || 'null'}`;
+            const shares = parseFloat(row.current_shares) || 0;
+            
+            if (shares > 0) {
+                sh.holdings[colKey] = shares;
+                sh.total_shares += shares;
+            }
+        });
+        
+        // Convert to array and filter out zero-total shareholders if needed
+        let shareholders = Array.from(shareholderMap.values());
+        if (status === 'ACTIVE') {
+            shareholders = shareholders.filter(sh => sh.total_shares > 0);
+        }
+
+        // Calculate column totals
+        const columnTotals = {};
+        let grandTotal = 0;
+        
+        columns.forEach(col => {
+            columnTotals[col.id] = 0;
+        });
+        
+        shareholders.forEach(sh => {
+            columns.forEach(col => {
+                const shares = sh.holdings[col.id] || 0;
+                columnTotals[col.id] += shares;
+            });
+            grandTotal += sh.total_shares;
+        });
+
+        // Build report data
         const reportData = {
             entity: entity,
             as_of_date: new Date().toISOString().split('T')[0],
             generated_by: user.full_name,
             generated_at: new Date().toISOString(),
             report_type: 'Ownership Report',
-            data: {}
+            columns: columns,
+            shareholders: shareholders,
+            column_totals: columnTotals,
+            grand_total: grandTotal,
+            total_shareholders: shareholders.length
         };
-        
-        // Group by stock type -> series -> shareholders
-        result.rows.forEach(row => {
-            const stockType = row.stock_type || 'COMMON';
-            const series = row.series || 'COMMON';
-            
-            if (!reportData.data[stockType]) {
-                reportData.data[stockType] = {};
-            }
-            
-            if (!reportData.data[stockType][series]) {
-                reportData.data[stockType][series] = {
-                    series_name: series,
-                    total_shares: 0,
-                    shareholders: []
-                };
-            }
-            
-            reportData.data[stockType][series].total_shares += parseFloat(row.current_shares);
-            reportData.data[stockType][series].shareholders.push({
-                shareholder_id: row.shareholder_id,
-                full_name: row.full_name,
-                address: row.address,
-                city: row.city,
-                state: row.state,
-                country: row.country,
-                zip_code: row.zip_code,
-                tax_id: row.tax_id,
-                email: row.email,
-                phone: row.phone,
-                shareholder_type: row.shareholder_type,
-                current_shares: parseFloat(row.current_shares),
-                first_issue_date: row.first_issue_date,
-                status: row.status
-            });
-        });
         
         // Format response based on requested format
         if (format === 'csv') {
             const csvRows = [];
             
             // CSV header
-            csvRows.push([
-                'Entity', 'Stock Type', 'Series', 'Shareholder ID',
-                'Shareholder Name', 'Address', 'City', 'State',
-                'Country', 'Zip Code', 'Tax ID', 'Email', 'Phone',
-                'Shareholder Type', 'Current Shares', 'First Issue Date', 'Status'
-            ].join(','));
+            const headerCols = ['Account #', 'Shareholder Name', 'Address'];
+            columns.forEach(col => headerCols.push(col.header));
+            headerCols.push('Total Shares', '%');
+            csvRows.push(headerCols.map(c => `"${c}"`).join(','));
             
             // CSV data
-            for (const [stockType, seriesData] of Object.entries(reportData.data)) {
-                for (const [series, seriesInfo] of Object.entries(seriesData)) {
-                    seriesInfo.shareholders.forEach(sh => {
-                        csvRows.push([
-                            `"${entity.name}"`,
-                            `"${stockType}"`,
-                            `"${series}"`,
-                            sh.shareholder_id,
-                            `"${sh.full_name}"`,
-                            `"${sh.address || ''}"`,
-                            `"${sh.city || ''}"`,
-                            `"${sh.state || ''}"`,
-                            `"${sh.country || ''}"`,
-                            `"${sh.zip_code || ''}"`,
-                            `"${sh.tax_id || ''}"`,
-                            `"${sh.email || ''}"`,
-                            `"${sh.phone || ''}"`,
-                            `"${sh.shareholder_type}"`,
-                            sh.current_shares,
-                            sh.first_issue_date || '',
-                            sh.status
-                        ].join(','));
-                    });
-                }
-            }
+            shareholders.forEach(sh => {
+                const row = [
+                    sh.external_id || sh.shareholder_id,
+                    sh.full_name,
+                    [sh.address, sh.city, sh.state, sh.zip_code].filter(Boolean).join(', ')
+                ];
+                columns.forEach(col => {
+                    row.push(sh.holdings[col.id] || 0);
+                });
+                row.push(sh.total_shares);
+                row.push(grandTotal > 0 ? ((sh.total_shares / grandTotal) * 100).toFixed(2) + '%' : '0%');
+                csvRows.push(row.map(c => typeof c === 'string' ? `"${c}"` : c).join(','));
+            });
+            
+            // Totals row
+            const totalsRow = ['', 'TOTALS', ''];
+            columns.forEach(col => totalsRow.push(columnTotals[col.id]));
+            totalsRow.push(grandTotal, '100%');
+            csvRows.push(totalsRow.join(','));
             
             const csvContent = csvRows.join('\n');
             

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AegisIQ Stock Ledger</title>
+  <meta name="description" content="Enterprise stock ledger management system with role-based access control" />
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,22 +14,23 @@
   <!-- App Styles -->
   <link rel="stylesheet" href="app.css">
 </head>
-<body>
+<body class="theme-dark">
 
 <!-- ================= HEADER ================= -->
-<header class="header">
+<header class="header navy-bg">
   <nav class="nav-container">
     <div class="nav-content">
       <img src="logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
-      
+
       <!-- Desktop Navigation -->
       <div class="nav-links">
-        <a href="#" class="nav-link active">Ledger</a>
-        <a href="#" class="nav-link">Reports</a>
-        <a href="#" class="nav-link">Audit</a>
+        <a href="#" class="nav-link active" data-page="ledger">Ledger</a>
+        <a href="#" class="nav-link" data-page="reports">Reports</a>
+        <a href="#" class="nav-link" data-page="audit">Audit</a>
+        <!-- Admin-only Button -->
+        <button id="adminButton" class="btn btn-gold hidden">Admin Panel</button>
       </div>
 
-      <!-- Auth Buttons -->
       <!-- User Dropdown -->
       <div class="user-dropdown" id="userDropdown">
         <button class="user-trigger" id="userTrigger">
@@ -44,14 +46,7 @@
             <span class="user-menu-role" id="userRole"></span>
           </div>
           <div class="user-menu-divider"></div>
-          <button class="user-menu-item danger" onclick="logout()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-              <polyline points="16 17 21 12 16 7"></polyline>
-              <line x1="21" y1="12" x2="9" y2="12"></line>
-            </svg>
-            Log out
-          </button>
+          <button class="user-menu-item danger" onclick="logout()">Log out</button>
         </div>
       </div>
 
@@ -67,9 +62,9 @@
 
     <!-- Mobile Menu -->
     <div class="mobile-menu hidden" id="mobileMenu">
-      <a href="#" class="mobile-nav-link">Ledger</a>
-      <a href="#" class="mobile-nav-link">Reports</a>
-      <a href="#" class="mobile-nav-link">Audit</a>
+      <a href="#" class="mobile-nav-link" data-page="ledger">Ledger</a>
+      <a href="#" class="mobile-nav-link" data-page="reports">Reports</a>
+      <a href="#" class="mobile-nav-link" data-page="audit">Audit</a>
       <div class="mobile-auth">
         <button class="btn btn-outline full-width" onclick="logout()">Logout</button>
       </div>
@@ -81,18 +76,18 @@
 <main>
   <section class="section-container">
     <div class="app-shell">
-      
+
       <!-- Page Header -->
       <div class="page-header">
         <div class="page-header-text">
-			<h1 class="app-title" id="entityName">Loading...</h1>
-			<p class="app-subtitle" id="entityDetails">
-				<span><strong>Entity ID:</strong> <span id="entityId"></span></span><br>
-				<span><strong>Address:</strong> <span id="entityAddress"></span></span><br>
-				<span><strong>Email:</strong> <span id="entityEmail"></span></span><br>
-				<span><strong>Tel:</strong> <span id="entityPhone"></span></span>
-			</p>
-		</div>
+          <h1 class="app-title gold-text" id="entityName">Loading...</h1>
+          <p class="app-subtitle" id="entityDetails">
+            <span><strong>Entity ID:</strong> <span id="entityId"></span></span><br>
+            <span><strong>Address:</strong> <span id="entityAddress"></span></span><br>
+            <span><strong>Email:</strong> <span id="entityEmail"></span></span><br>
+            <span><strong>Tel:</strong> <span id="entityPhone"></span></span>
+          </p>
+        </div>
         <div class="page-header-stats">
           <div class="stat-badge">
             <span class="stat-label">Total Shareholders</span>
@@ -108,40 +103,28 @@
       <!-- ================= FILTER BAR ================= -->
       <div class="filters-container card">
         <div class="filter-group">
-          <div class="search-wrapper">
-            <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input type="text" id="searchInput" placeholder="Search ID or name..." oninput="applyFilters()" />
-          </div>
-          
-          <select id="entityFilter" onchange="applyFilters()">
+          <input type="text" id="searchInput" placeholder="Search ID or name..." oninput="applyFilters()" />
+          <select id="entityFilter" onchange="handleEntityChange()">
             <option value="">All Entities</option>
+            <!-- Populated from DB - only visible to SUPER_ADMIN -->
           </select>
-          
           <select id="stockTypeFilter" onchange="handleStockTypeChange()">
             <option value="">All Stock Types</option>
+            <!-- Populated dynamically from entity_stock_types -->
           </select>
-          
-          <select id="seriesFilter" onchange="applyFilters()">
+          <select id="seriesFilter" onchange="applyFilters()" disabled>
             <option value="">All Series</option>
+            <!-- Populated dynamically from entity_stock_series -->
           </select>
-          
           <select id="statusFilter" onchange="applyFilters()">
             <option value="">All Status</option>
             <option value="ACTIVE">Active</option>
             <option value="INACTIVE">Inactive</option>
           </select>
         </div>
-        
+
         <div class="filter-actions">
-          <button class="btn btn-ghost" onclick="resetFilters()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 6h18M3 12h18M3 18h18"></path>
-            </svg>
-            Reset
-          </button>
+          <button class="btn btn-ghost" onclick="resetFilters()">Reset</button>
           <button class="btn btn-primary" onclick="exportCSV()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -160,318 +143,125 @@
         </div>
       </div>
 
-      <!-- ================= HOLDINGS MATRIX - DARK EXECUTIVE ================= -->
+      <!-- ================= HOLDINGS MATRIX (Dark Executive Grid) ================= -->
       <div class="card holdings-matrix">
-
-        <!-- HEADER -->
-        <div class="matrix-header">
-          <div class="matrix-cell expand-toggle"></div>
-          <div class="matrix-cell account-col">Account #</div>
-          <div class="matrix-cell name-col">Shareholder Name</div>
-          <div class="matrix-cell address-col">Address</div>
-          <div class="matrix-cell common-col">Common</div>
-          <div class="matrix-cell series-col">Series A</div>
-          <div class="matrix-cell series-col">Series B</div>
-          <div class="matrix-cell total-col">Total Shares</div>
-          <div class="matrix-cell pct-col">%</div>
-          <div class="matrix-cell actions-col"></div>
+        <!-- Header - rendered dynamically from stock types + series -->
+        <div class="matrix-header" id="matrixHeader">
+          <!-- Columns generated by JS -->
         </div>
 
-        <!-- BODY - Populated by JS -->
-        <div class="matrix-body" id="holdingsMatrixBody"></div>
-
-        <!-- FOOTER TOTALS -->
-        <div class="matrix-footer" id="holdingsMatrixFooter">
-          <div class="matrix-cell expand-toggle"></div>
-          <div class="matrix-cell account-col"></div>
-          <div class="matrix-cell name-col">TOTALS</div>
-          <div class="matrix-cell address-col"></div>
-          <div class="matrix-cell common-col" id="footerCommon">0</div>
-          <div class="matrix-cell series-col" id="footerSeriesA">0</div>
-          <div class="matrix-cell series-col" id="footerSeriesB">0</div>
-          <div class="matrix-cell total-col" id="footerTotal">0</div>
-          <div class="matrix-cell pct-col">100%</div>
-          <div class="matrix-cell actions-col"></div>
+        <!-- Body - shareholder rows with expandable detail panels -->
+        <div class="matrix-body" id="holdingsMatrixBody">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <span>Loading ownership data...</span>
+          </div>
         </div>
 
-      </div>
-
-<!-- ================= TWO-PANE DETAIL DRAWER ================= -->
-<div class="drawer-overlay" id="detailDrawer">
-  <div class="drawer dark-exec">
-
-    <!-- LEFT -->
-    <aside class="drawer-left">
-      <div class="drawer-profile">
-        <div class="avatar">JH</div>
-        <div>
-          <div class="drawer-name" id="drawerName"></div>
-          <div class="drawer-sub"></div>
+        <!-- Footer - totals rendered dynamically -->
+        <div class="matrix-footer" id="matrixFooter">
+          <!-- Totals generated by JS -->
         </div>
       </div>
-
-      <div class="drawer-meta">
-        <div class="meta-label">Address</div>
-        <div class="meta-value" id="drawerAddress"></div>
-      </div>
-
-      <nav class="drawer-nav">
-        <button class="drawer-tab active" onclick="switchDrawerTab('holdings', event)">
-          Holdings
-        </button>
-        <button class="drawer-tab" onclick="switchDrawerTab('entries', event)">
-          Book Entries
-        </button>
-      </nav>
-    </aside>
-
-    <!-- RIGHT -->
-    <section class="drawer-right">
-
-      <!-- HOLDINGS -->
-      <div class="drawer-panel active" id="drawer-holdings">
-        <div class="drawer-section">
-          <div class="section-title"></div>
-          <table class="drawer-table">
-            <thead>
-              <tr>
-                <th>Book Entry ID</th>
-                <th>Shares</th>
-                <th>Date</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ENTRIES -->
-      <div class="drawer-panel" id="drawer-entries">
-        <div class="empty-note">
-          Select a holding to view book entries.
-        </div>
-      </div>
-
-    </section>
-
-    <button class="drawer-close" onclick="closeDrawer()">✕</button>
-  </div>
-</div>
 
     </div>
   </section>
 </main>
 
-<!-- ================= MODALS ================= -->
-
-<!-- Create Shareholder Modal -->
-<div class="modal-overlay" id="createShareholderModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>Create Shareholder</h2>
-      <button class="modal-close" onclick="closeModal('createShareholderModal')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>
-    <form id="createShareholderForm" onsubmit="submitCreateShareholder(event)">
-      <div class="form-group">
-        <label>Full Name</label>
-        <input type="text" id="shareholderName" placeholder="Enter full name" required />
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" id="shareholderEmail" placeholder="email@example.com" />
-        </div>
-        <div class="form-group">
-          <label>Tax ID</label>
-          <input type="text" id="shareholderTaxId" placeholder="XXX-XX-XXXX" />
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Address</label>
-        <input type="text" id="shareholderAddress" placeholder="Street address" />
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Entity</label>
-          <select id="shareholderEntity" required></select>
-        </div>
-        <div class="form-group">
-          <label>Type</label>
-          <select id="shareholderType" required>
-            <option value="INDIVIDUAL">Individual</option>
-            <option value="ENTITY">Entity</option>
-            <option value="TRUST">Trust</option>
-          </select>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeModal('createShareholderModal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create Shareholder</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Issue Shares Modal -->
-<div class="modal-overlay" id="issueSharesModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>Issue Shares</h2>
-      <button class="modal-close" onclick="closeModal('issueSharesModal')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>
-    <form id="issueSharesForm" onsubmit="submitIssueShares(event)">
-      <input type="hidden" id="issueShareholderId" />
-      <div class="form-group">
-        <label>Shareholder</label>
-        <input type="text" id="issueShareholderName" readonly class="readonly-input" />
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Stock Type</label>
-          <select id="issueStockType" onchange="updateIssueSeries()" required></select>
-        </div>
-        <div class="form-group">
-          <label>Series</label>
-          <select id="issueSeries"></select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Shares</label>
-          <input type="number" id="issueShares" placeholder="Number of shares" min="1" required />
-        </div>
-        <div class="form-group">
-          <label>Issue Date</label>
-          <input type="date" id="issueDate" required />
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Certificate #</label>
-          <input type="text" id="issueCertificate" placeholder="Optional" />
-        </div>
-        <div class="form-group">
-          <label>Price per Share</label>
-          <input type="number" id="issuePricePerShare" placeholder="0.00" step="0.01" min="0" />
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Notes</label>
-        <textarea id="issueNotes" placeholder="Optional notes..."></textarea>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeModal('issueSharesModal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Issue Shares</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Transfer Shares Modal -->
-<div class="modal-overlay" id="transferSharesModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>Transfer Shares</h2>
-      <button class="modal-close" onclick="closeModal('transferSharesModal')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>
-    <form id="transferSharesForm" onsubmit="submitTransferShares(event)">
-      <input type="hidden" id="transferFromId" />
-      <div class="form-group">
-        <label>From Shareholder</label>
-        <input type="text" id="transferFromName" readonly class="readonly-input" />
-      </div>
-      <div class="form-group">
-        <label>To Shareholder</label>
-        <select id="transferToId" required></select>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Stock Type</label>
-          <select id="transferStockType" onchange="updateTransferSeries()" required></select>
-        </div>
-        <div class="form-group">
-          <label>Series</label>
-          <select id="transferSeries"></select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Shares</label>
-          <input type="number" id="transferShares" placeholder="Number of shares" min="1" required />
-        </div>
-        <div class="form-group">
-          <label>Transfer Date</label>
-          <input type="date" id="transferDate" required />
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeModal('transferSharesModal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Transfer Shares</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Book Entry Detail Drawer -->
-<div class="drawer-overlay" id="bookEntryDrawer">
-  <div class="drawer">
-    <div class="drawer-header">
-      <h2>Shareholder Details</h2>
-      <button class="drawer-close" onclick="closeDrawer()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>
-    <div class="drawer-content" id="drawerContent">
-      <!-- Content will be injected -->
-    </div>
-  </div>
-</div>
-
-<!-- ================= TOAST CONTAINER ================= -->
-<div id="toastContainer"></div>
-
 <!-- ================= FOOTER ================= -->
-<footer class="footer">
+<footer class="footer navy-bg">
   <div class="footer-container">
-    <div class="footer-bottom">
-      <div class="footer-legal">
-        <span>© 2026 AegisIQ. All rights reserved.</span>
-        <span class="separator">|</span>
-        <a href="#">Terms of Service</a>
-        <span class="separator">|</span>
-        <a href="mailto:support@aegisiqstockledger.com">support@aegisiqstockledger.com</a>
-      </div>
-      <button class="back-to-top" onclick="scrollToTop()">
-        Back to Top
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="19" x2="12" y2="5"></line>
-          <polyline points="5 12 12 5 19 12"></polyline>
-        </svg>
-      </button>
-    </div>
+    <span class="gold-text">© 2026 AegisIQ. All rights reserved.</span>
+    <span class="separator">|</span>
+    <a href="#">Terms of Service</a>
+    <span class="separator">|</span>
+    <a href="mailto:support@aegisiq.online">support@aegisiq.online</a>
+    <button class="back-to-top" onclick="scrollToTop()">Back to Top</button>
   </div>
 </footer>
 
+<!-- ================= MODALS ================= -->
+<!-- Create/Edit Shareholder Modal -->
+<div class="modal-overlay hidden" id="shareholderModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="modalTitle">Add Shareholder</h3>
+      <button class="modal-close" onclick="closeShareholderModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="shareholderForm" onsubmit="handleShareholderSubmit(event)">
+        <input type="hidden" id="formShareholderId" />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="formFullName">Full Name *</label>
+            <input type="text" id="formFullName" required />
+          </div>
+          <div class="form-group">
+            <label for="formExternalId">Account #</label>
+            <input type="text" id="formExternalId" placeholder="Auto-generated if blank" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="formEmail">Email</label>
+            <input type="email" id="formEmail" />
+          </div>
+          <div class="form-group">
+            <label for="formPhone">Phone</label>
+            <input type="text" id="formPhone" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="formAddress">Address</label>
+          <input type="text" id="formAddress" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="formCity">City</label>
+            <input type="text" id="formCity" />
+          </div>
+          <div class="form-group">
+            <label for="formState">State</label>
+            <input type="text" id="formState" />
+          </div>
+          <div class="form-group">
+            <label for="formZipCode">Zip Code</label>
+            <input type="text" id="formZipCode" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="formShareholderType">Type</label>
+            <select id="formShareholderType">
+              <option value="INDIVIDUAL">Individual</option>
+              <option value="INSTITUTION">Institution</option>
+              <option value="TRUST">Trust</option>
+              <option value="ESTATE">Estate</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="formTaxId">Tax ID</label>
+            <input type="text" id="formTaxId" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeShareholderModal()">Cancel</button>
+          <button type="submit" class="btn btn-gold">Save Shareholder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- App Script - handles all dynamic behavior -->
 <script src="app.js"></script>
 </body>
 </html>
