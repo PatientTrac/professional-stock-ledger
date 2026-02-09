@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!-- App Styles -->
-  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body class="theme-dark">
 
@@ -20,15 +20,15 @@
 <header class="header navy-bg">
   <nav class="nav-container">
     <div class="nav-content">
-      <img src="logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
+      <img src="/assets/brand/logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
 
       <!-- Desktop Navigation -->
       <div class="nav-links">
-        <a href="#" class="nav-link active" data-page="ledger">Ledger</a>
+        <a href="app.html" class="nav-link active">Ledger</a>
         <a href="#" class="nav-link" data-page="reports">Reports</a>
         <a href="#" class="nav-link" data-page="audit">Audit</a>
         <!-- Admin-only Button -->
-        <button id="adminButton" class="btn btn-gold hidden">Admin Panel</button>
+        <a href="admin.html" id="adminButton" class="btn btn-gold hidden">Admin Panel</a>
       </div>
 
       <!-- User Dropdown -->
@@ -100,6 +100,62 @@
         </div>
       </div>
 
+      <!-- ================= ADMIN ACTION TOOLBAR (Admin/Super Admin Only) ================= -->
+      <!-- <div class="admin-toolbar hidden" id="adminToolbar"> -->
+        <!-- <div class="toolbar-group"> -->
+          <!-- <button class="btn btn-primary" onclick="openIssueSharesModal()"> -->
+            <!-- <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> -->
+              <!-- <line x1="12" y1="5" x2="12" y2="19"></line> -->
+              <!-- <line x1="5" y1="12" x2="19" y2="12"></line> -->
+            <!-- </svg> -->
+            <!-- Issue Shares -->
+          <!-- </button> -->
+          <!-- <button class="btn btn-primary" onclick="openTransferStockModal()"> -->
+            <!-- <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> -->
+              <!-- <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path> -->
+              <!-- <path d="M13.73 21a2 2 0 0 1-3.46 0"></path> -->
+            <!-- </svg> -->
+            <!-- Transfer Stock -->
+          <!-- </button> -->
+          <!-- <button class="btn btn-danger" onclick="openCancelStockModal()"> -->
+            <!-- <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> -->
+              <!-- <circle cx="12" cy="12" r="10"></circle> -->
+              <!-- <line x1="15" y1="9" x2="9" y2="15"></line> -->
+              <!-- <line x1="9" y1="9" x2="15" y2="15"></line> -->
+            <!-- </svg> -->
+            <!-- Cancel Stock -->
+          <!-- </button> -->
+          <!-- <button class="btn btn-outline" onclick="openReverseSplitModal()"> -->
+            <!-- <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> -->
+              <!-- <polyline points="17 1 21 5 17 9"></polyline> -->
+              <!-- <path d="M3 11V9a4 4 0 0 1 4-4h14"></path> -->
+              <!-- <polyline points="7 23 3 19 7 15"></polyline> -->
+              <!-- <path d="M21 13v2a4 4 0 0 1-4 4H3"></path> -->
+            <!-- </svg> -->
+            <!-- Reverse Split -->
+          <!-- </button> -->
+        <!-- </div> -->
+        <!-- <div class="toolbar-group"> -->
+          <!-- <button class="btn btn-ghost" onclick="printLedger()"> -->
+            <!-- <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> -->
+              <!-- <polyline points="6 9 6 2 18 2 18 9"></polyline> -->
+              <!-- <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path> -->
+              <!-- <rect x="6" y="14" width="12" height="8"></rect> -->
+            <!-- </svg> -->
+            <!-- Print -->
+          <!-- </button> -->
+          <!-- <button class="btn btn-ghost" onclick="openCapTableModal()"> -->
+            <!-- <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> -->
+              <!-- <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path> -->
+              <!-- <polyline points="14 2 14 8 20 8"></polyline> -->
+              <!-- <line x1="16" y1="13" x2="8" y2="13"></line> -->
+              <!-- <line x1="16" y1="17" x2="8" y2="17"></line> -->
+            <!-- </svg> -->
+            <!-- Cap Table -->
+          <!-- </button> -->
+        <!-- </div> -->
+      <!-- </div> -->
+
       <!-- ================= FILTER BAR ================= -->
       <div class="filters-container card">
         <div class="filter-group">
@@ -121,24 +177,30 @@
             <option value="ACTIVE">Active</option>
             <option value="INACTIVE">Inactive</option>
           </select>
+          <select id="transactionTypeFilter" onchange="applyFilters()">
+            <option value="">All Transactions</option>
+            <option value="ISSUANCE">Issuances</option>
+            <option value="TRANSFER">Transfers</option>
+            <option value="CANCELLATION">Cancellations</option>
+          </select>
         </div>
 
         <div class="filter-actions">
           <button class="btn btn-ghost" onclick="resetFilters()">Reset</button>
+          <button class="btn btn-ghost" onclick="toggleSortOrder()" id="sortBtn" title="Sort by name">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <polyline points="19 12 12 19 5 12"></polyline>
+            </svg>
+            Sort
+          </button>
           <button class="btn btn-primary" onclick="exportCSV()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            Export CSV
-          </button>
-          <button class="btn btn-gold" onclick="openCreateShareholderModal()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Add Shareholder
+            Export
           </button>
         </div>
       </div>
@@ -258,10 +320,389 @@
   </div>
 </div>
 
+<!-- Issue Shares Modal -->
+<div class="modal-overlay hidden" id="issueSharesModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Issue Shares</h3>
+      <button class="modal-close" onclick="closeModal('issueSharesModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="issueSharesForm" onsubmit="handleIssueSharesSubmit(event)">
+        <div class="form-group">
+          <label for="issueShareholder">Shareholder *</label>
+          <select id="issueShareholder" required></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="issueStockType">Stock Type *</label>
+            <select id="issueStockType" required onchange="handleIssueStockTypeChange()"></select>
+          </div>
+          <div class="form-group">
+            <label for="issueSeries">Series</label>
+            <select id="issueSeries" disabled></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="issueShares">Number of Shares *</label>
+            <input type="number" id="issueShares" required min="1" step="1" />
+          </div>
+          <div class="form-group">
+            <label for="issueCertificate">Certificate #</label>
+            <input type="text" id="issueCertificate" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="issueDate">Transaction Date</label>
+          <input type="date" id="issueDate" />
+        </div>
+        <div class="form-group">
+          <label for="issueNotes">Notes</label>
+          <textarea id="issueNotes" rows="2"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('issueSharesModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Issue Shares</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Transfer Stock Modal -->
+<div class="modal-overlay hidden" id="transferStockModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Transfer Stock</h3>
+      <button class="modal-close" onclick="closeModal('transferStockModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="transferStockForm" onsubmit="handleTransferStockSubmit(event)">
+        <div class="form-section">
+          <h4 class="form-section-title">From Shareholder</h4>
+          <div class="form-group">
+            <label for="transferFromShareholder">Shareholder *</label>
+            <select id="transferFromShareholder" required onchange="handleTransferFromShareholderChange()"></select>
+          </div>
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">Stock Details</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="transferStockType">Stock Type *</label>
+              <select id="transferStockType" required onchange="handleTransferStockTypeChange()"></select>
+            </div>
+            <div class="form-group">
+              <label for="transferSeries">Series</label>
+              <select id="transferSeries" disabled></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="transferShares">Number of Shares *</label>
+              <input type="number" id="transferShares" required min="1" step="1" />
+            </div>
+            <div class="form-group">
+              <label for="transferDate">Transaction Date</label>
+              <input type="date" id="transferDate" />
+            </div>
+          </div>
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">To Shareholder</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="transferToType">Recipient Type *</label>
+              <select id="transferToType" required onchange="handleTransferToTypeChange()">
+                <option value="existing">Existing Shareholder</option>
+                <option value="new">Create New Shareholder</option>
+              </select>
+            </div>
+            <div class="form-group" id="existingReceiverGroup">
+              <label for="transferToShareholder">Select Shareholder *</label>
+              <select id="transferToShareholder"></select>
+            </div>
+          </div>
+          <div id="newShareholderFields" class="hidden">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="transferNewName">Full Name *</label>
+                <input type="text" id="transferNewName" />
+              </div>
+              <div class="form-group">
+                <label for="transferNewEmail">Email</label>
+                <input type="email" id="transferNewEmail" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">Verification</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="transferNotaryVerified" />
+                <span>Notary Verification</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="transferStockPower" />
+                <span>Stock Power Verified</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="transferLetterOfInstruction" />
+              <span>Letter of Instruction (Saved in DV)</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="transferNotes">Notes</label>
+          <textarea id="transferNotes" rows="2"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('transferStockModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Execute Transfer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel Stock Modal -->
+<div class="modal-overlay hidden" id="cancelStockModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Cancel Stock</h3>
+      <button class="modal-close" onclick="closeModal('cancelStockModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="cancelStockForm" onsubmit="handleCancelStockSubmit(event)">
+        <div class="form-group">
+          <label for="cancelShareholder">Shareholder *</label>
+          <select id="cancelShareholder" required onchange="handleCancelShareholderChange()"></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cancelStockType">Stock Type *</label>
+            <select id="cancelStockType" required onchange="handleCancelStockTypeChange()"></select>
+          </div>
+          <div class="form-group">
+            <label for="cancelSeries">Series</label>
+            <select id="cancelSeries" disabled></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cancelShares">Number of Shares *</label>
+            <input type="number" id="cancelShares" required min="1" step="1" />
+          </div>
+          <div class="form-group">
+            <label for="cancelDate">Cancellation Date</label>
+            <input type="date" id="cancelDate" />
+          </div>
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">Verification</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="cancelNotaryVerified" />
+                <span>Notary Verification</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="cancelStockPower" />
+                <span>Stock Power Verified</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cancelLetterOfInstruction" />
+              <span>Letter of Instruction (Saved in DV)</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="cancelNotes">Reason for Cancellation</label>
+          <textarea id="cancelNotes" rows="2" required></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('cancelStockModal')">Cancel</button>
+          <button type="submit" class="btn btn-danger">Cancel Stock</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reverse Split Modal -->
+<div class="modal-overlay hidden" id="reverseSplitModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Reverse Stock Split</h3>
+      <button class="modal-close" onclick="closeModal('reverseSplitModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="reverseSplitForm" onsubmit="handleReverseSplitSubmit(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="splitStockType">Stock Type *</label>
+            <select id="splitStockType" required onchange="handleSplitStockTypeChange()"></select>
+          </div>
+          <div class="form-group">
+            <label for="splitSeries">Series</label>
+            <select id="splitSeries" disabled></select>
+          </div>
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">Reverse Split Formula</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="splitOldShares">Old Shares (Consolidating)</label>
+              <input type="number" id="splitOldShares" required min="2" value="10" />
+            </div>
+            <div class="form-group">
+              <label for="splitNewShares">New Shares (Result)</label>
+              <input type="number" id="splitNewShares" required min="1" value="1" />
+            </div>
+          </div>
+          <p class="form-help-text">Example: 10:1 reverse split means 10 old shares become 1 new share</p>
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">Verification</h4>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="splitBoardResolution" required />
+              <span>Board Resolution Verified *</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="splitAmendmentSOS" required />
+              <span>Secretary of State Amendment Verified *</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="splitEffectiveDate">Effective Date *</label>
+          <input type="date" id="splitEffectiveDate" required />
+        </div>
+        <div class="form-group">
+          <label for="splitNotes">Notes</label>
+          <textarea id="splitNotes" rows="2"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('reverseSplitModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Execute Reverse Split</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Cap Table Modal -->
+<div class="modal-overlay hidden" id="capTableModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Generate Cap Table</h3>
+      <button class="modal-close" onclick="closeModal('capTableModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="capTableForm" onsubmit="handleCapTableSubmit(event)">
+        <div class="form-group">
+          <label for="capTableFormat">Export Format *</label>
+          <select id="capTableFormat" required>
+            <option value="pdf">PDF Report</option>
+            <option value="csv">CSV Spreadsheet</option>
+            <option value="preview">Preview on Screen</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="capTableAsOfDate">As of Date</label>
+          <input type="date" id="capTableAsOfDate" />
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">Include in Report</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="capTableIncludeCommon" checked />
+                <span>Common Stock</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="capTableIncludePreferred" checked />
+                <span>Preferred Stock</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="capTableIncludeWarrants" checked />
+                <span>Warrants</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="capTableIncludeOptions" checked />
+                <span>Options</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="capTableShowOwnership" checked />
+              <span>Show Ownership Percentages</span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('capTableModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Generate Cap Table</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- App Script - handles all dynamic behavior -->
-<script src="app.js"></script>
+<script src="/assets/js/app.js"></script>
 </body>
 </html>

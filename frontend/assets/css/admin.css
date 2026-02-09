@@ -1,0 +1,438 @@
+/* =========================================================
+   AegisIQ Stock Ledger - Admin Panel Styles
+   ========================================================= */
+
+/* Admin Tabs */
+/* Entity Filter Bar (shared across tabs) */
+.admin-entity-filter-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.entity-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.entity-filter-row label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Admin Tabs */
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-app);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+
+.admin-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.admin-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.admin-tab.active {
+  color: var(--gold-500);
+  background: rgba(212, 175, 55, 0.1);
+}
+
+.admin-tab svg {
+  opacity: 0.7;
+}
+
+.admin-tab.active svg {
+  opacity: 1;
+}
+
+/* Tab Panels */
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+/* Panel Header */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.panel-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.panel-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-entity-filter {
+  min-width: 200px;
+}
+
+/* Data Tables */
+.data-table-container {
+  background: var(--bg-app);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.data-table th {
+  background: rgba(212, 175, 55, 0.05);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gold-500);
+}
+
+.data-table td {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.data-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.data-table .mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-badge.active {
+  background: var(--success-muted);
+  color: var(--success);
+}
+
+.status-badge.inactive {
+  background: var(--danger-muted);
+  color: var(--danger);
+}
+
+.status-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Role Badges */
+.role-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.role-badge.super_admin {
+  background: linear-gradient(135deg, var(--gold-500), var(--gold-600));
+  color: var(--bg-app);
+}
+
+.role-badge.admin {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--info);
+}
+
+.role-badge.user {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+}
+
+/* Action Buttons in Tables */
+.table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-table {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-table:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.btn-table.edit:hover {
+  color: var(--gold-500);
+  border-color: var(--gold-500);
+}
+
+.btn-table.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Series List */
+.series-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.series-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(212, 175, 55, 0.1);
+  border: 1px solid var(--border-gold);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--gold-500);
+}
+
+.series-tag.inactive {
+  opacity: 0.5;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+
+/* Expandable Stock Type Rows */
+.stock-type-row {
+  cursor: pointer;
+}
+
+.stock-type-row:hover td {
+  background: rgba(212, 175, 55, 0.03);
+}
+
+.stock-type-row .expand-icon {
+  transition: transform 0.2s ease;
+}
+
+.stock-type-row.expanded .expand-icon {
+  transform: rotate(90deg);
+}
+
+.series-detail-row {
+  display: none;
+}
+
+.series-detail-row.visible {
+  display: table-row;
+}
+
+.series-detail-row td {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 16px 24px;
+}
+
+.series-detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.series-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.series-detail-header h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.series-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.series-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.series-item .series-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.series-item.inactive {
+  opacity: 0.5;
+}
+
+.series-item .series-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Modal Sizes */
+.modal.modal-lg {
+  max-width: 600px;
+}
+
+/* Form Hints */
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Checkbox Group */
+.checkbox-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold-500);
+}
+
+/* Empty States */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+.empty-state svg {
+  opacity: 0.5;
+}
+
+/* Supports Series Badge */
+.supports-series-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--info);
+}
+
+/* Logo Link */
+.logo-link {
+  display: flex;
+  align-items: center;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .admin-tabs {
+    flex-wrap: wrap;
+  }
+  
+  .admin-tab {
+    flex: 1;
+    justify-content: center;
+    min-width: 100px;
+  }
+  
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .panel-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  
+  .admin-entity-filter {
+    width: 100%;
+  }
+  
+  .data-table-container {
+    overflow-x: auto;
+  }
+  
+  .data-table {
+    min-width: 600px;
+  }
+}

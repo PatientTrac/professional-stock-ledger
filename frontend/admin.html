@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Panel | AegisIQ Stock Ledger</title>
+  <meta name="description" content="Admin panel for managing entities, users, and stock types" />
+  <meta name="robots" content="noindex, nofollow" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- App Styles -->
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/admin.css">
+</head>
+<body class="theme-dark">
+
+<!-- ================= HEADER ================= -->
+<header class="header navy-bg">
+  <nav class="nav-container">
+    <div class="nav-content">
+      <a href="index.html" class="logo-link">
+        <img src="/assets/brand/logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
+      </a>
+
+      <!-- Desktop Navigation -->
+      <div class="nav-links">
+        <a href="app.html" class="nav-link">Ledger</a>
+        <a href="admin.html" class="nav-link active">Admin</a>
+      </div>
+
+      <!-- User Dropdown -->
+      <div class="user-dropdown" id="userDropdown">
+        <button class="user-trigger" id="userTrigger">
+          <div class="user-avatar" id="userAvatar">--</div>
+          <span class="user-name" id="userName">Loading...</span>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 24 24">
+            <polyline points="6 9 12 15 18 9" fill="none" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </button>
+        <div class="user-menu" id="userMenu">
+          <div class="user-menu-header">
+            <span class="user-menu-email" id="userEmail"></span>
+            <span class="user-menu-role" id="userRole"></span>
+          </div>
+          <div class="user-menu-divider"></div>
+          <button class="user-menu-item" onclick="window.location.href='app.html'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            </svg>
+            Back to Ledger
+          </button>
+          <button class="user-menu-item danger" onclick="Auth.logout()">Log out</button>
+        </div>
+      </div>
+
+      <!-- Mobile Menu Toggle -->
+      <button class="mobile-menu-toggle" id="mobileMenuToggle">
+        <svg class="menu-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div class="mobile-menu hidden" id="mobileMenu">
+      <a href="app.html" class="mobile-nav-link">Ledger</a>
+      <a href="admin.html" class="mobile-nav-link active">Admin</a>
+      <div class="mobile-auth">
+        <button class="btn btn-outline full-width" onclick="Auth.logout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<!-- ================= MAIN CONTENT ================= -->
+<main>
+  <section class="section-container">
+    <div class="app-shell">
+
+      <!-- Page Header -->
+      <div class="page-header">
+        <div class="page-header-text">
+          <h1 class="app-title gold-text">Admin Panel</h1>
+          <p class="app-subtitle">Manage entities, users, and stock configurations</p>
+        </div>
+      </div>
+
+      <!-- Admin Tabs - Order: Shareholders, Stock Types, Users, (Entities for Super Admin) -->
+      <div class="admin-tabs">
+        <button class="admin-tab active" data-tab="shareholders" onclick="AdminApp.switchTab('shareholders')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
+          Shareholders
+        </button>
+        <button class="admin-tab" data-tab="stock-types" onclick="AdminApp.switchTab('stock-types')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="20" x2="12" y2="10"></line>
+            <line x1="18" y1="20" x2="18" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="16"></line>
+          </svg>
+          Stock Types
+        </button>
+        <button class="admin-tab" data-tab="users" onclick="AdminApp.switchTab('users')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          Users
+        </button>
+        <button class="admin-tab" data-tab="entities" onclick="AdminApp.switchTab('entities')" id="entitiesTab" style="display: none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path>
+            <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path>
+            <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path>
+          </svg>
+          Entities
+        </button>
+      </div>
+
+      <!-- Shared Entity Filter (visible on shareholders & stock types tabs) -->
+      <div class="admin-entity-filter-bar" id="adminEntityFilterBar">
+        <div class="entity-filter-row">
+          <label for="adminEntityFilter">Entity:</label>
+          <select id="adminEntityFilter" onchange="AdminApp.handleEntityChange()" class="admin-entity-filter">
+            <option value="">Select Entity</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="admin-content">
+        
+        <!-- Shareholders Tab -->
+        <div class="tab-panel active" id="panel-shareholders">
+          <div class="panel-header">
+            <h2>Shareholder Management</h2>
+            <div class="panel-actions">
+              <button class="btn btn-gold" onclick="AdminApp.openCreateShareholderModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Add Shareholder
+              </button>
+            </div>
+          </div>
+          <div class="data-table-container" id="shareholdersTable">
+            <div class="empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+              </svg>
+              <span>Select an entity to view shareholders</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Stock Types Tab -->
+        <div class="tab-panel" id="panel-stock-types">
+          <div class="panel-header">
+            <h2>Stock Types & Series</h2>
+            <div class="panel-actions">
+              <button class="btn btn-gold" onclick="AdminApp.openCreateStockTypeModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Add Stock Type
+              </button>
+            </div>
+          </div>
+          <div class="data-table-container" id="stockTypesTable">
+            <div class="empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <line x1="12" y1="20" x2="12" y2="10"></line>
+                <line x1="18" y1="20" x2="18" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="16"></line>
+              </svg>
+              <span>Select an entity to view stock types</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Users Tab -->
+        <div class="tab-panel" id="panel-users">
+          <div class="panel-header">
+            <h2>User Management</h2>
+            <div class="panel-actions">
+              <button class="btn btn-gold" onclick="AdminApp.openCreateUserModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Add User
+              </button>
+            </div>
+          </div>
+          <div class="data-table-container" id="usersTable">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <span>Loading users...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Entities Tab (Super Admin Only) -->
+        <div class="tab-panel" id="panel-entities">
+          <div class="panel-header">
+            <h2>Entity Management</h2>
+            <div class="panel-actions">
+              <button class="btn btn-gold" onclick="AdminApp.openCreateEntityModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Add Entity
+              </button>
+            </div>
+          </div>
+          <div class="data-table-container" id="entitiesTable">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <span>Loading entities...</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer class="footer navy-bg">
+  <div class="footer-container">
+    <span class="gold-text">© 2026 AegisIQ. All rights reserved.</span>
+    <span class="separator">|</span>
+    <a href="#">Terms of Service</a>
+    <span class="separator">|</span>
+    <a href="mailto:support@aegisiq.online">support@aegisiq.online</a>
+    <button class="back-to-top" onclick="UI.scrollToTop()">Back to Top</button>
+  </div>
+</footer>
+
+<!-- ================= MODALS ================= -->
+
+<!-- Create/Edit Stock Type Modal -->
+<div class="modal-overlay hidden" id="stockTypeModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="stockTypeModalTitle">Add Stock Type</h3>
+      <button class="modal-close" onclick="UI.closeModal('stockTypeModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="stockTypeForm" onsubmit="AdminApp.handleStockTypeSubmit(event)">
+        <input type="hidden" id="stockTypeId" />
+        <div class="form-group">
+          <label for="stockTypeCode">Stock Type *</label>
+          <select id="stockTypeCode" required>
+            <option value="">Select type...</option>
+            <option value="COMMON">Common</option>
+            <option value="PREFERRED">Preferred</option>
+            <option value="WARRANT">Warrant</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="stockTypeDisplayName">Display Name *</label>
+          <input type="text" id="stockTypeDisplayName" placeholder="e.g., Common Stock" required />
+        </div>
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" id="stockTypeActive" checked />
+            Active
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('stockTypeModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Save Stock Type</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Create/Edit Series Modal -->
+<div class="modal-overlay hidden" id="seriesModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="seriesModalTitle">Add Series</h3>
+      <button class="modal-close" onclick="UI.closeModal('seriesModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="seriesForm" onsubmit="AdminApp.handleSeriesSubmit(event)">
+        <input type="hidden" id="seriesId" />
+        <input type="hidden" id="seriesStockTypeId" />
+        <div class="form-group">
+          <label for="seriesName">Series Name *</label>
+          <input type="text" id="seriesName" placeholder="e.g., A, B, C" required />
+        </div>
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" id="seriesActive" checked />
+            Active
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('seriesModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Save Series</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Create/Edit User Modal -->
+<div class="modal-overlay hidden" id="userModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title" id="userModalTitle">Add User</h3>
+      <button class="modal-close" onclick="UI.closeModal('userModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="userForm" onsubmit="AdminApp.handleUserSubmit(event)">
+        <input type="hidden" id="userId" />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="userFullName">Full Name *</label>
+            <input type="text" id="userFullName" required />
+          </div>
+          <div class="form-group">
+            <label for="userEmail">Email *</label>
+            <input type="email" id="userEmail" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="userRole">Role *</label>
+            <select id="userRole" required>
+              <option value="USER">User (Read-only)</option>
+              <option value="ADMIN">Admin</option>
+              <option value="SUPER_ADMIN" id="superAdminOption" style="display: none;">Super Admin</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="userEntityId">Entity *</label>
+            <select id="userEntityId" required>
+              <option value="">Select entity...</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row" id="passwordRow">
+          <div class="form-group">
+            <label for="userPassword">Password *</label>
+            <input type="password" id="userPassword" minlength="8" />
+            <small class="form-hint">Minimum 8 characters</small>
+          </div>
+        </div>
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" id="userActive" checked />
+            Active
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('userModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Save User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Create/Edit Entity Modal -->
+<div class="modal-overlay hidden" id="entityModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title" id="entityModalTitle">Add Entity</h3>
+      <button class="modal-close" onclick="UI.closeModal('entityModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="entityForm" onsubmit="AdminApp.handleEntitySubmit(event)">
+        <input type="hidden" id="entityId" />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="entityName">Entity Name *</label>
+            <input type="text" id="entityName" required />
+          </div>
+          <div class="form-group">
+            <label for="entityLegalName">Legal Name</label>
+            <input type="text" id="entityLegalName" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="entityEmail">Email</label>
+            <input type="email" id="entityEmail" />
+          </div>
+          <div class="form-group">
+            <label for="entityPhone">Phone</label>
+            <input type="text" id="entityPhone" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="entityAddress">Address</label>
+          <input type="text" id="entityAddress" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="entityCity">City</label>
+            <input type="text" id="entityCity" />
+          </div>
+          <div class="form-group">
+            <label for="entityState">State</label>
+            <input type="text" id="entityState" />
+          </div>
+          <div class="form-group">
+            <label for="entityZipCode">Zip Code</label>
+            <input type="text" id="entityZipCode" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="entityCountry">Country</label>
+            <input type="text" id="entityCountry" value="US" />
+          </div>
+          <div class="form-group">
+            <label for="entityTaxId">Tax ID</label>
+            <input type="text" id="entityTaxId" />
+          </div>
+        </div>
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" id="entityActive" checked />
+            Active
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('entityModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Save Entity</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Create/Edit Shareholder Modal -->
+<div class="modal-overlay hidden" id="shareholderModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title" id="shareholderModalTitle">Add Shareholder</h3>
+      <button class="modal-close" onclick="UI.closeModal('shareholderModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="shareholderForm" onsubmit="AdminApp.handleShareholderSubmit(event)">
+        <input type="hidden" id="shareholderId" />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="shareholderFullName">Full Name *</label>
+            <input type="text" id="shareholderFullName" required />
+          </div>
+          <div class="form-group">
+            <label for="shareholderExternalId">Account #</label>
+            <input type="text" id="shareholderExternalId" placeholder="Auto-generated if blank" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="shareholderEmail">Email</label>
+            <input type="email" id="shareholderEmail" />
+          </div>
+          <div class="form-group">
+            <label for="shareholderPhone">Phone</label>
+            <input type="text" id="shareholderPhone" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="shareholderAddress">Address</label>
+          <input type="text" id="shareholderAddress" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="shareholderCity">City</label>
+            <input type="text" id="shareholderCity" />
+          </div>
+          <div class="form-group">
+            <label for="shareholderState">State</label>
+            <input type="text" id="shareholderState" />
+          </div>
+          <div class="form-group">
+            <label for="shareholderZipCode">Zip Code</label>
+            <input type="text" id="shareholderZipCode" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="shareholderType">Type</label>
+            <select id="shareholderType">
+              <option value="INDIVIDUAL">Individual</option>
+              <option value="CORPORATION">Corporation</option>
+              <option value="PARTNERSHIP">Partnership</option>
+              <option value="TRUST">Trust</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="shareholderTaxId">Tax ID</label>
+            <input type="text" id="shareholderTaxId" />
+          </div>
+        </div>
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" id="shareholderActive" checked />
+            Active
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('shareholderModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold" id="shareholderSubmitBtn">Save Shareholder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Shareholder Confirmation Modal -->
+<div class="modal-overlay hidden" id="deleteShareholderModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Delete Shareholder</h3>
+      <button class="modal-close" onclick="UI.closeModal('deleteShareholderModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <p class="text-sm text-gray-700 mb-3">
+        Are you sure you want to delete shareholder
+        <strong id="deleteShareholderName"></strong>?
+      </p>
+
+      <p class="text-xs text-gray-500">
+        If this shareholder has transactions, they will be <strong>deactivated</strong>
+        instead of permanently deleted.
+      </p>
+
+      <div class="modal-actions mt-6">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          onclick="UI.closeModal('deleteShareholderModal')"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-danger"
+          id="confirmDeleteShareholderBtn"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="/assets/js/admin.js"></script>
+</body>
+</html>

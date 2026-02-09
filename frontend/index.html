@@ -17,29 +17,30 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/assets/css/shared.css">
+  <link rel="stylesheet" href="/assets/css/style.css">
+  
 </head>
 <body>
   <!-- Header -->
   <header class="header">
     <nav class="nav-container">
       <div class="nav-content">
-        <img src="logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
+        <img src="/assets/brand/logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
         
         <!-- Desktop Navigation -->
         <div class="nav-links">
           <a href="/" class="nav-link">Home</a>
           <a href="#features" class="nav-link">Features</a>
-          <a href="#pricing" class="nav-link">Pricing</a>
-          <a href="#resources" class="nav-link">Resources</a>
-          <a href="#about" class="nav-link">About</a>
-          <a href="#contact" class="nav-link">Contact</a>
+          <a href="pricing.html" class="nav-link">Pricing</a>
+          <a href="about.html" class="nav-link">About</a>
+          <a href="contact.html" class="nav-link">Contact</a>
         </div>
 
         <!-- Auth Buttons -->
         <div class="auth-buttons">
           <a href="login.html" class="btn btn-ghost">Login</a>
-		      <a href="login.html?mode=register" class="btn btn-hero">Sign Up Free</a>
+		  <a href="login.html?mode=register" class="btn btn-hero">Sign Up Free</a>
         </div>
 
         <!-- Mobile Menu Toggle -->
@@ -60,13 +61,12 @@
       <div class="mobile-menu hidden" id="mobileMenu">
         <a href="/" class="mobile-nav-link">Home</a>
         <a href="#features" class="mobile-nav-link">Features</a>
-        <a href="#pricing" class="mobile-nav-link">Pricing</a>
-        <a href="#resources" class="mobile-nav-link">Resources</a>
-        <a href="#about" class="mobile-nav-link">About</a>
-        <a href="#contact" class="mobile-nav-link">Contact</a>
+        <a href="pricing.html" class="mobile-nav-link">Pricing</a>
+        <a href="about.html" class="mobile-nav-link">About</a>
+        <a href="contact.html" class="mobile-nav-link">Contact</a>
         <div class="mobile-auth">
-          <button class="btn btn-outline full-width">Login</button>
-          <button class="btn btn-hero full-width">Sign Up for Free</button>
+		  <a href="login.html" class="btn btn-outline full-width">Login</a>
+		  <a href="login.html?mode=register" class="btn btn-hero full-width">Sign Up Free</a>
         </div>
       </div>
     </nav>
@@ -77,7 +77,7 @@
     <section class="hero">
       <div class="hero-bg"></div>
       <div class="hero-logo-watermark">
-        <img src="logo.svg" alt="" aria-hidden="true" />
+        <img src="/assets/brand/logo.svg" alt="" aria-hidden="true" />
       </div>
       <div class="hero-shield-overlay"></div>
 
@@ -102,14 +102,14 @@
             </p>
 
             <div class="hero-buttons">
-              <button class="btn btn-hero btn-xl">
-                Access the Ledger
+              <a href="app.html" class="btn btn-hero btn-xl">
+                Open App
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                   <polyline points="12 5 19 12 12 19"></polyline>
                 </svg>
-              </button>
-              <button class="btn btn-hero-outline btn-xl">Request Demo</button>
+              </a>
+              <a href="admin.html" class="btn btn-hero-outline btn-xl">Admin Panel</a>
             </div>
 
             <div class="highlights">
@@ -157,7 +157,7 @@
                 <div class="cap-table-preview" id="capTablePreview">
                   <div class="cap-table-header">
                     <div class="cap-table-title">
-                      <img src="logo.svg" alt="AegisIQ" class="cap-table-logo" />
+                      <img src="/assets/brand/logo.svg" alt="AegisIQ" class="cap-table-logo" />
                       <span>Cap Table Overview</span>
                     </div>
                     <div class="live-badge">
@@ -252,6 +252,9 @@
 	</div>
 
 </div>
+
+
+
                   <div class="chart-bars">
                     <div class="chart-bar" style="height: 40%"></div>
                     <div class="chart-bar" style="height: 65%"></div>
@@ -536,7 +539,7 @@
       <div class="footer-top">
         <div class="footer-brand">
           <div class="footer-logo">
-            <img src="logo.svg" alt="AegisIQ" className="w-11 h-11 rounded" />
+            <img src="/assets/brand/logo.svg" alt="AegisIQ" className="w-11 h-11 rounded" />
           </div>
           <div>
             <span class="footer-brand-name">Aegis<span class="text-gradient-gold">IQ</span></span>
@@ -618,19 +621,15 @@
           <span class="separator">|</span>
           <a href="mailto:support@aegisiqstockledger.com">support@aegisiqstockledger.com</a>
         </div>
-        <button class="back-to-top" id="backToTop">
-          Back to Top
-          <div class="back-to-top-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="19" x2="12" y2="5"></line>
-              <polyline points="5 12 12 5 19 12"></polyline>
-            </svg>
-          </div>
-        </button>
       </div>
     </div>
   </footer>
+  
+  <button class="back-to-top" id="backToTop">
+	<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+  </button>
 
-  <script src="script.js"></script>
+  <script src="/assets/js/shared.js"></script>
+  <script src="/assets/js/script.js"></script>
 </body>
 </html>
