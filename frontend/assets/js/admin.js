@@ -115,8 +115,8 @@ const UI = {
     const initials = (user.full_name || user.email || '--').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
     const avatarEl = document.getElementById('userAvatar');
     const nameEl = document.getElementById('userName');
-    const emailEl = document.getElementById('userEmail');
-    const roleEl = document.getElementById('userRole');
+    const emailEl = document.getElementById('headerUserEmail');
+    const roleEl = document.getElementById('headerUserRole');
     if (avatarEl) avatarEl.textContent = initials;
     if (nameEl) nameEl.textContent = user.full_name || user.email;
     if (emailEl) emailEl.textContent = user.email;
@@ -431,27 +431,32 @@ const AdminApp = {
     }
     let html = '<table class="data-table"><thead><tr><th style="width:40px;"></th><th>Stock Type</th><th>Display Name</th><th>Supports Series</th><th>Status</th><th style="width:100px;">Actions</th></tr></thead><tbody>';
     this.state.stockTypes.forEach(st => {
-      const isExpanded = this.state.expandedStockTypes.has(st.id);
+      const numId = Number(st.id);
+      const isExpanded = this.state.expandedStockTypes.has(numId);
       const hasSeries = st.supports_series && st.series && st.series.length > 0;
-      html += `<tr class="stock-type-row ${isExpanded ? 'expanded' : ''}" ${st.supports_series ? `onclick="AdminApp.toggleStockTypeRow(${st.id})"` : ''}>
-        <td>${st.supports_series ? `<svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>` : ''}</td>
+      html += `<tr class="stock-type-row ${isExpanded ? 'expanded' : ''}" ${st.supports_series ? `onclick="AdminApp.toggleStockTypeRow(${numId})"` : ''} style="cursor:${st.supports_series ? 'pointer' : 'default'}">
+        <td>${st.supports_series ? `<svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition:transform 0.2s;${isExpanded ? 'transform:rotate(90deg)' : ''}"><polyline points="9 18 15 12 9 6"/></svg>` : ''}</td>
         <td><span class="mono">${UI.escapeHtml(st.stock_type)}</span></td>
         <td>${UI.escapeHtml(st.display_name)}</td>
         <td>${st.supports_series ? `<span class="supports-series-badge">Yes ${hasSeries ? '(' + st.series.length + ')' : ''}</span>` : '<span class="text-muted">No</span>'}</td>
         <td><span class="status-badge ${st.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${st.is_active ? 'Active' : 'Inactive'}</span></td>
         <td onclick="event.stopPropagation()"><div class="table-actions">
-          <button class="btn-table edit" onclick="AdminApp.editStockType(${st.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          ${st.supports_series ? `<button class="btn-table" onclick="AdminApp.openAddSeriesModal(${st.id})" title="Add Series"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>` : ''}
+        <button class="btn-table edit" onclick="event.stopPropagation(); AdminApp.editStockType(${numId})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          ${st.supports_series ? `<button class="btn-table" onclick="event.stopPropagation(); AdminApp.openAddSeriesModal(${numId})" title="Add Series"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>` : ''}
         </div></td>
       </tr>`;
       if (st.supports_series) {
-        html += `<tr class="series-detail-row ${isExpanded ? 'visible' : ''}" id="series-row-${st.id}"><td colspan="6"><div class="series-detail-content"><div class="series-detail-header"><h4>Series for ${UI.escapeHtml(st.display_name)}</h4></div>`;
+        html += `<tr class="series-detail-row ${isExpanded ? 'visible' : ''}" id="series-row-${numId}" style="display:${isExpanded ? 'table-row' : 'none'}"><td colspan="6"><div class="series-detail-content"><div class="series-detail-header"><h4>Series for ${UI.escapeHtml(st.display_name)}</h4></div>`;
         if (st.series && st.series.length > 0) {
-          html += '<div class="series-grid">';
+          html += '<table class="data-table series-table" style="margin:0;"><thead><tr><th>Series Name</th><th>Status</th><th style="width:60px;">Actions</th></tr></thead><tbody>';
           st.series.forEach(s => {
-            html += `<div class="series-item ${s.is_active ? '' : 'inactive'}"><span class="series-name">Series ${UI.escapeHtml(s.series)}</span><div class="series-actions"><button class="btn-table edit" onclick="AdminApp.editSeries(${s.id}, ${st.id})" title="Edit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></div>`;
+            html += `<tr class="${s.is_active ? '' : 'inactive-row'}">
+              <td>Series ${UI.escapeHtml(s.series)}</td>
+              <td><span class="status-badge ${s.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${s.is_active ? 'Active' : 'Inactive'}</span></td>
+              <td><div class="table-actions"><button class="btn-table edit" onclick="event.stopPropagation(); AdminApp.editSeries(${s.id}, ${numId})" title="Edit Series"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+            </tr>`;
           });
-          html += '</div>';
+          html += '</tbody></table>';
         } else {
           html += '<div class="empty-state" style="padding:20px;"><span>No series defined.</span></div>';
         }
@@ -463,9 +468,20 @@ const AdminApp = {
   },
 
   toggleStockTypeRow(id) {
-    if (this.state.expandedStockTypes.has(id)) this.state.expandedStockTypes.delete(id);
-    else this.state.expandedStockTypes.add(id);
-    this.renderStockTypesTable();
+    // Coerce to number for consistent Set matching
+    const numId = Number(id);
+    if (this.state.expandedStockTypes.has(numId)) this.state.expandedStockTypes.delete(numId);
+    else this.state.expandedStockTypes.add(numId);
+
+    // Toggle visibility directly in DOM instead of full re-render
+    const seriesRow = document.getElementById(`series-row-${numId}`);
+    const parentRow = seriesRow ? seriesRow.previousElementSibling : null;
+    if (seriesRow) {
+      const isNowExpanded = this.state.expandedStockTypes.has(numId);
+      seriesRow.classList.toggle('visible', isNowExpanded);
+      seriesRow.style.display = isNowExpanded ? 'table-row' : 'none';
+      if (parentRow) parentRow.classList.toggle('expanded', isNowExpanded);
+    }
   },
 
   openCreateStockTypeModal() {
@@ -473,17 +489,20 @@ const AdminApp = {
     document.getElementById('stockTypeModalTitle').textContent = 'Add Stock Type';
     document.getElementById('stockTypeForm').reset();
     document.getElementById('stockTypeId').value = '';
+    document.getElementById('stockTypeCode').disabled = false;
     document.getElementById('stockTypeActive').checked = true;
     this.state.isSubmitting = false;
     UI.openModal('stockTypeModal');
   },
 
   editStockType(id) {
-    const st = this.state.stockTypes.find(s => s.id === id);
-    if (!st) return;
+    const st = this.state.stockTypes.find(s => Number(s.id) === Number(id));
+    if (!st) { console.error('Stock type not found for id:', id); UI.toast('Stock type not found', 'error'); return; }
     document.getElementById('stockTypeModalTitle').textContent = 'Edit Stock Type';
     document.getElementById('stockTypeId').value = st.id;
-    document.getElementById('stockTypeCode').value = st.stock_type;
+    const codeSelect = document.getElementById('stockTypeCode');
+    codeSelect.value = (st.stock_type || '').toUpperCase();
+    codeSelect.disabled = true;
     document.getElementById('stockTypeDisplayName').value = st.display_name;
     document.getElementById('stockTypeActive').checked = st.is_active;
     this.state.isSubmitting = false;
@@ -499,9 +518,13 @@ const AdminApp = {
 
     const id = document.getElementById('stockTypeId').value;
     const isEdit = !!id;
+    const codeSelect = document.getElementById('stockTypeCode');
+    // Re-enable temporarily so value is accessible
+    const wasDisabled = codeSelect.disabled;
+    codeSelect.disabled = false;
     const payload = {
       entity_id: this.state.selectedEntityId,
-      stock_type: document.getElementById('stockTypeCode').value,
+      stock_type: codeSelect.value,
       display_name: document.getElementById('stockTypeDisplayName').value,
       is_active: document.getElementById('stockTypeActive').checked
     };
@@ -511,10 +534,12 @@ const AdminApp = {
       if (isEdit) await API.put('/stockTypes?action=update-type', payload);
       else await API.post('/stockTypes?action=create-type', payload);
       UI.closeModal('stockTypeModal');
+      codeSelect.disabled = false;
       UI.toast(isEdit ? 'Stock type updated' : 'Stock type created', 'success');
       await this.loadStockTypes();
     } catch (error) {
       UI.toast(error.message || 'Failed to save stock type', 'error');
+      codeSelect.disabled = wasDisabled;
     } finally {
       this.state.isSubmitting = false;
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save Stock Type'; }
@@ -533,10 +558,10 @@ const AdminApp = {
   },
 
   editSeries(seriesId, stockTypeId) {
-    const st = this.state.stockTypes.find(s => s.id === stockTypeId);
-    if (!st) return;
-    const series = st.series.find(s => s.id === seriesId);
-    if (!series) return;
+    const st = this.state.stockTypes.find(s => Number(s.id) === Number(stockTypeId));
+    if (!st) { console.error('Stock type not found for id:', stockTypeId); return; }
+    const series = (st.series || []).find(s => Number(s.id) === Number(seriesId));
+    if (!series) { console.error('Series not found for id:', seriesId); return; }
     document.getElementById('seriesModalTitle').textContent = 'Edit Series';
     document.getElementById('seriesId').value = series.id;
     document.getElementById('seriesStockTypeId').value = stockTypeId;
@@ -608,7 +633,7 @@ const AdminApp = {
         <td><span class="role-badge ${user.role.toLowerCase()}">${user.role}</span></td>
         <td>${entity ? UI.escapeHtml(entity.name) : '—'}</td>
         <td><span class="status-badge ${user.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${user.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td><div class="table-actions"><button class="btn-table edit" onclick="AdminApp.editUser(${user.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+        <td><div class="table-actions"><button class="btn-table edit" onclick="AdminApp.editUser(${user.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-table danger" onclick="AdminApp.deleteUser(${user.id}, '${UI.escapeHtml(user.full_name || user.email).replace(/'/g, "\\'")}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></div></td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -622,6 +647,9 @@ const AdminApp = {
     document.getElementById('userActive').checked = true;
     document.getElementById('passwordRow').style.display = 'block';
     document.getElementById('userPassword').required = true;
+	document.getElementById('userConfirmPassword').required = true;
+    document.getElementById('userConfirmPassword').value = '';
+    this.clearPasswordErrors();						   
     if (!Auth.isSuperAdmin()) document.getElementById('userEntityId').value = this.state.user.entity_id;
     this.state.isSubmitting = false;
     UI.openModal('userModal');
@@ -640,6 +668,9 @@ const AdminApp = {
     document.getElementById('passwordRow').style.display = 'block';
     document.getElementById('userPassword').required = false;
     document.getElementById('userPassword').value = '';
+	document.getElementById('userConfirmPassword').required = false;
+    document.getElementById('userConfirmPassword').value = '';
+    this.clearPasswordErrors();
     this.state.isSubmitting = false;
     UI.openModal('userModal');
   },
@@ -661,8 +692,30 @@ const AdminApp = {
       is_active: document.getElementById('userActive').checked
     };
     const password = document.getElementById('userPassword').value;
-    if (password) payload.password = password;
-    if (isEdit) payload.id = id;
+	const confirmPassword = document.getElementById('userConfirmPassword').value;
+
+    if (password) {
+      if (!this.validatePassword(password)) {
+        this.state.isSubmitting = false;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save User'; }
+        return;
+      }
+      if (password !== confirmPassword) {
+        document.getElementById('confirmPasswordError').textContent = 'Passwords do not match';
+        document.getElementById('confirmPasswordError').classList.remove('hidden');
+        this.state.isSubmitting = false;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save User'; }
+        return;
+      }
+      payload.password = password;
+    } else if (!isEdit) {
+      document.getElementById('passwordError').textContent = 'Password is required';
+      document.getElementById('passwordError').classList.remove('hidden');
+      this.state.isSubmitting = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save User'; }
+      return;
+    }
+	if (isEdit) payload.id = id;
 
     try {
       if (isEdit) await API.put('/users?action=update', payload);
@@ -676,6 +729,25 @@ const AdminApp = {
       this.state.isSubmitting = false;
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save User'; }
     }
+  },
+
+  validatePassword(password) {
+    this.clearPasswordErrors();
+    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+    if (!regex.test(password)) {
+      const el = document.getElementById('passwordError');
+      el.textContent = 'Must have 8+ chars,at least 1 uppercase, 1 lowercase, 1 number & a special character';
+      el.classList.remove('hidden');
+      return false;
+    }
+    return true;
+  },
+
+  clearPasswordErrors() {
+    ['passwordError', 'confirmPasswordError'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = ''; el.classList.add('hidden'); }
+    });
   },
 
   /* ---- ENTITIES (Super Admin) ---- */
@@ -693,7 +765,7 @@ const AdminApp = {
         <td>${UI.escapeHtml(entity.legal_name || '—')}</td>
         <td class="mono">${UI.escapeHtml(entity.email || '—')}</td>
         <td><span class="status-badge ${entity.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${entity.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td><div class="table-actions"><button class="btn-table edit" onclick="AdminApp.editEntity(${entity.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
+        <td><div class="table-actions"><button class="btn-table edit" onclick="AdminApp.editEntity(${entity.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-table danger" onclick="AdminApp.deleteEntity(${entity.id}, '${UI.escapeHtml(entity.name).replace(/'/g, "\\'")}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></div></td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -767,6 +839,51 @@ const AdminApp = {
       this.state.isSubmitting = false;
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save Entity'; }
     }
+  },
+
+  /* ---- DELETE USER ---- */
+  deleteUser(id, name) {
+    this.openDeleteUserModal(id, name);
+  },
+
+  openDeleteUserModal(id, name) {
+    document.getElementById('deleteUserName').textContent = `"${name}"`;
+    const confirmBtn = document.getElementById('confirmDeleteUserBtn');
+    confirmBtn.onclick = null;
+    confirmBtn.onclick = async () => {
+      try {
+        await API.delete(`/users?action=delete&id=${id}`);
+        UI.toast('User deleted/deactivated', 'success');
+        UI.closeModal('deleteUserModal');
+        await this.loadUsers();
+      } catch (error) {
+        UI.toast(error.message || 'Failed to delete user', 'error');
+      }
+    };
+    UI.openModal('deleteUserModal');
+  },
+
+  /* ---- DELETE ENTITY ---- */
+  deleteEntity(id, name) {
+    this.openDeleteEntityModal(id, name);
+  },
+
+  openDeleteEntityModal(id, name) {
+    document.getElementById('deleteEntityName').textContent = `"${name}"`;
+    const confirmBtn = document.getElementById('confirmDeleteEntityBtn');
+    confirmBtn.onclick = null;
+    confirmBtn.onclick = async () => {
+      try {
+        await API.delete(`/entities?action=delete&id=${id}`);
+        UI.toast('Entity deleted/deactivated', 'success');
+        UI.closeModal('deleteEntityModal');
+        await this.loadEntities();
+        this.renderEntitiesTable();
+      } catch (error) {
+        UI.toast(error.message || 'Failed to delete entity', 'error');
+      }
+    };
+    UI.openModal('deleteEntityModal');
   }
 };
 

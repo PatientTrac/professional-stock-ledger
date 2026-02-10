@@ -38,6 +38,7 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'GET' && action === 'list') return await handleListUsers(event, params);
     if (event.httpMethod === 'POST' && action === 'create') return await handleCreateUser(event);
     if (event.httpMethod === 'PUT' && action === 'update') return await handleUpdateUser(event);
+    if (event.httpMethod === 'DELETE' && action === 'delete') return await handleDeleteUser(event, params);
 
     return json(400, { success: false, error: 'Invalid action or method' });
   } catch (e) {
@@ -227,5 +228,43 @@ async function handleUpdateUser(event) {
   } catch (e) {
     console.error('Update user error:', e);
     return json(500, { success: false, error: 'Failed to update user: ' + e.message }, headers);
+  }
+}
+
+// -----------------------------------
+// DELETE delete - Delete/deactivate user
+// -----------------------------------
+async function handleDeleteUser(event, params) {
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  if (!requireRole(['SUPER_ADMIN', 'ADMIN'])(user)) {
+    return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
+  }
+
+  const id = params.id;
+  if (!id) return json(400, { success: false, error: 'User ID is required' }, headers);
+
+  try {
+    const existing = await query('SELECT id, entity_id FROM users WHERE id = $1', [id]);
+    if (!existing.rows.length) return json(404, { success: false, error: 'User not found' }, headers);
+
+    // ADMIN can only delete users in their entity
+    if (user.role !== 'SUPER_ADMIN' && existing.rows[0].entity_id !== user.entity_id) {
+      return json(403, { success: false, error: 'Forbidden: Cannot delete this user' }, headers);
+    }
+
+    // Prevent deleting yourself
+    if (String(existing.rows[0].id) === String(user.id)) {
+      return json(400, { success: false, error: 'Cannot delete your own account' }, headers);
+    }
+
+    // Deactivate instead of hard delete
+    await query('UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+    return json(200, { success: true, message: 'User deactivated' }, headers);
+  } catch (e) {
+    console.error('Delete user error:', e);
+    return json(500, { success: false, error: 'Failed to delete user: ' + e.message }, headers);
   }
 }

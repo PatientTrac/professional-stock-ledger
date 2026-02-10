@@ -295,13 +295,6 @@ async function handleUpdateShareholder(event) {
     'zip_code', 'country', 'shareholder_type', 'tax_id', 'is_active'
   ]);
 
-									 
-						  
-									 
-							 
-							  
-   
-
   const keys = Object.keys(updates).filter(k => allowedFields.has(k));
   if (!keys.length) {
     return json(400, { success: false, error: 'No valid fields to update' }, headers);

@@ -107,15 +107,7 @@ async function handleShareholderHoldings(event, params) {
       est.supports_series,
       st.entity_stock_series_id,
       ess.series,
-      COALESCE(SUM(
-        CASE 
-          WHEN st.transaction_type = 'ISSUANCE' THEN st.shares
-          WHEN st.transaction_type = 'TRANSFER' AND st.to_shareholder_id = $1 THEN st.shares
-          WHEN st.transaction_type = 'TRANSFER' AND st.from_shareholder_id = $1 THEN -st.shares
-          WHEN st.transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN -st.shares
-          ELSE 0
-        END
-      ), 0) as current_shares
+      COALESCE(SUM(st.shares), 0) AS current_shares
     FROM share_transactions st
 													 
     JOIN entity_stock_types est ON est.id = st.entity_stock_type_id
@@ -128,7 +120,7 @@ async function handleShareholderHoldings(event, params) {
         WHEN st.transaction_type = 'ISSUANCE' THEN st.shares
         WHEN st.transaction_type = 'TRANSFER' AND st.to_shareholder_id = $1 THEN st.shares
         WHEN st.transaction_type = 'TRANSFER' AND st.from_shareholder_id = $1 THEN -st.shares
-        WHEN st.transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN -st.shares
+        WHEN st.transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN st.shares
         ELSE 0
       END
     ), 0) > 0
@@ -327,7 +319,7 @@ async function handleTransfer(event) {
         WHEN transaction_type = 'ISSUANCE' THEN shares
         WHEN transaction_type = 'TRANSFER' AND to_shareholder_id = $1 THEN shares
         WHEN transaction_type = 'TRANSFER' AND from_shareholder_id = $1 THEN -shares
-        WHEN transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN -shares
+        WHEN transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN shares
         ELSE 0
       END
     ), 0) as balance
@@ -503,15 +495,7 @@ async function handleGetShareholderHoldings(event, params) {
       SELECT 
         st.entity_stock_type_id,
         st.entity_stock_series_id,
-        COALESCE(SUM(
-          CASE 
-            WHEN st.transaction_type = 'ISSUANCE' THEN st.shares
-            WHEN st.transaction_type = 'TRANSFER' AND st.to_shareholder_id = $2 THEN st.shares
-            WHEN st.transaction_type = 'TRANSFER' AND st.from_shareholder_id = $2 THEN -st.shares
-            WHEN st.transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN st.shares
-            ELSE 0
-          END
-        ), 0) as current_shares
+        COALESCE(SUM(st.shares), 0) AS current_sharess
       FROM share_transactions st
       WHERE st.entity_id = $1 AND st.shareholder_id = $2
       GROUP BY st.entity_stock_type_id, st.entity_stock_series_id

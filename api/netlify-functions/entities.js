@@ -32,6 +32,11 @@ exports.handler = async (event) => {
       return json(400, { success: false, error: 'Invalid action or method' });
     }
 
+    if (event.httpMethod === 'DELETE') {
+      if (action === 'delete') return await handleDeleteEntity(event, params);
+      return json(400, { success: false, error: 'Invalid action or method' });
+    }
+
     return json(405, { success: false, error: 'Method not allowed' });
   } catch (e) {
     console.error('ENTITIES ERROR:', e);
@@ -246,5 +251,40 @@ async function handleUpdateEntity(event) {
   } catch (e) {
     console.error('Update entity error:', e);
     return json(500, { success:false, error:'Failed to update entity: ' + e.message }, headers);
+  }
+}
+
+// -----------------------------------
+// DELETE delete (SUPER_ADMIN only)
+// -----------------------------------
+async function handleDeleteEntity(event, params) {
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  if (!requireRole(['SUPER_ADMIN'])(user)) {
+    return json(403, { success:false, error:'Forbidden: Only SUPER_ADMIN can delete entities' }, headers);
+  }
+
+  const id = params.id;
+  if (!id) return json(400, { success:false, error:'Entity ID is required' }, headers);
+
+  try {
+    const existing = await query('SELECT id FROM entities WHERE id = $1', [id]);
+    if (!existing.rows.length) return json(404, { success:false, error:'Entity not found' }, headers);
+
+    // Check for associated users/shareholders - deactivate instead
+    const users = await query('SELECT id FROM users WHERE entity_id = $1 AND is_active = TRUE LIMIT 1', [id]);
+    if (users.rows.length) {
+      await query('UPDATE entities SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+      return json(200, { success:true, message:'Entity deactivated (has active users)' }, headers);
+    }
+
+    // No active users - deactivate (safe approach)
+    await query('UPDATE entities SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+    return json(200, { success:true, message:'Entity deactivated' }, headers);
+  } catch (e) {
+    console.error('Delete entity error:', e);
+    return json(500, { success:false, error:'Failed to delete entity: ' + e.message }, headers);
   }
 }
