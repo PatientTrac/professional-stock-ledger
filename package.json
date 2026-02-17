@@ -1,30 +1,24 @@
 {
-  "name": "ledger-app",
+  "name": "aegisiq-api",
   "version": "1.0.0",
-  "description": "Multi-user ledger application",
+  "description": "AegisIQ Stock Ledger API - Local Development Server",
+  "main": "local-server.js",
   "scripts": {
-    "build": "echo 'No build step required'",
-    "dev": "netlify dev",
-    "deploy": "netlify deploy --prod",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "netlify dev:exec drizzle-kit migrate",
-    "db:studio": "netlify dev:exec drizzle-kit studio"
+    "start": "node local-server.js",
+    "dev": "node local-server.js",
+    "init-db": "node -e \"require('./netlify-functions/utils/dbprod.js').initDb()\""
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.2",
-    "@netlify/neon": "^0.1.0",
+    "@neondatabase/serverless": "^0.9.5",
     "bcryptjs": "^2.4.3",
-    "dotenv": "^17.2.3",
-    "drizzle-orm": "^0.45.1",
-    "jsonwebtoken": "^9.0.3"
-  },
-  "devDependencies": {
-    "drizzle-kit": "^0.31.8",
-    "netlify-cli": "^23.7.3"
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3",
+    "ws": "^8.19.0"
   },
   "engines": {
-    "node": "18.x"
-  },
-  "type": "commonjs",
-  "license": "ISC"
+    "node": ">=18.0.0"
+  }
 }
