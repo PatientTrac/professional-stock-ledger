@@ -176,8 +176,8 @@ async function handleCreateShareholder(event) {
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  // Only ADMIN and SUPER_ADMIN can create shareholders
-  if (!requireRole(['SUPER_ADMIN', 'ADMIN'])(user)) {
+  // Only ENTITY_ADMIN and SUPER_ADMIN can create shareholders
+  if (!requireRole(['SUPER_ADMIN', 'ENTITY_ADMIN'])(user)) {
     return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
   }
 
@@ -212,17 +212,8 @@ async function handleCreateShareholder(event) {
   }
 
   try {
-    // Generate external_id if not provided
-    let finalExternalId = external_id;
-    if (!finalExternalId) {
-      const countResult = await query(
-        'SELECT COUNT(*) as cnt FROM shareholders WHERE entity_id = $1',
-        [targetEntityId]
-      );
-      const count = parseInt(countResult.rows[0].cnt) + 1;
-      finalExternalId = `SH-${String(count).padStart(6, '0')}`;
-    }
-
+    // Generate external_id as EntityID_ShareholderID after insert
+    // We'll set it after getting the shareholder ID from RETURNING
     const result = await query(
       `
       INSERT INTO shareholders (
@@ -234,7 +225,7 @@ async function handleCreateShareholder(event) {
       `,
       [
         targetEntityId,
-        finalExternalId,
+        external_id || null,
         full_name,
         email || null,
         phone || null,
@@ -248,9 +239,15 @@ async function handleCreateShareholder(event) {
       ]
     );
 
-    const shareholder = result.rows[0];
-						 
-											 
+    let shareholder = result.rows[0];
+
+    // Set external_id to EntityID_ShareholderID format
+    const generatedExternalId = `${targetEntityId}_${shareholder.id}`;
+    const updateResult = await query(
+      'UPDATE shareholders SET external_id = $1 WHERE id = $2 RETURNING *',
+      [generatedExternalId, shareholder.id]
+    );
+    shareholder = updateResult.rows[0];
 
     return json(201, { success: true, shareholder }, headers);
   } catch (e) {
@@ -267,8 +264,8 @@ async function handleUpdateShareholder(event) {
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  // Only ADMIN and SUPER_ADMIN can update shareholders
-  if (!requireRole(['SUPER_ADMIN', 'ADMIN'])(user)) {
+  // Only ENTITY_ADMIN and SUPER_ADMIN can update shareholders
+  if (!requireRole(['SUPER_ADMIN', 'ENTITY_ADMIN'])(user)) {
     return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
   }
 

@@ -59,16 +59,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // ================================
-  // Back to Top Button
-  // ================================
-  const backToTopButton = document.getElementById('backToTop');
-
-  if (backToTopButton) {
-    backToTopButton.addEventListener('click', function() {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  }
 
   // ================================
   // Newsletter Form (Placeholder)

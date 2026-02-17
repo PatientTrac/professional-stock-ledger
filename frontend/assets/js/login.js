@@ -34,12 +34,18 @@ document.addEventListener('DOMContentLoaded', function() {
     showRegisterForm();
   }
 
-  // Check if already logged in
-  const token = localStorage.getItem('auth_token');
-  if (token) {
-    // Redirect to app if already logged in
-    window.location.href = 'app.html';
-    return;
+// Clear any stale session data on login page load
+  // This fixes the issue where refreshed server still auto-logs in
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('user');
+  sessionStorage.clear();
+  
+  // Show logout message if present
+  const logoutMessage = sessionStorage.getItem('logout_message');
+  if (logoutMessage) {
+    sessionStorage.removeItem('logout_message');
+    showError(loginError, logoutMessage);
+    loginError.style.display = 'block';
   }
 
   // Toggle between login and register forms

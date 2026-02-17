@@ -3,6 +3,8 @@ const { query } = require('../utils/db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secure-jwt-secret-change-in-production';
 
+// Valid roles: SUPER_ADMIN, ENTITY_ADMIN, MANAGER, VIEWER
+
 function verifyToken(token) {
     try {
         return jwt.verify(token, JWT_SECRET);

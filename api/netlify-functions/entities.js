@@ -137,8 +137,8 @@ async function handleListEntities(event, params) {
     const qParams = [];
     let i = 0;
 
-    // Non-super admins only see their own entity
-    if (user.role !== 'SUPER_ADMIN') {
+  // Non-super admins only see their own entity
+    if (user.role !== 'SUPER_ADMIN' && user.role !== 'ENTITY_ADMIN') {
       i++;
       q += ` AND id = $${i}`;
       qParams.push(user.entity_id);
@@ -171,7 +171,7 @@ async function handleGetEntity(event, params) {
   if (!entityId) return json(400, { success:false, error:'Entity ID is required' }, headers);
 
   // Non-super admins can only access their entity
-  if (user.role !== 'SUPER_ADMIN' && String(user.entity_id) !== String(entityId)) {
+  if (user.role !== 'SUPER_ADMIN' && user.role !== 'ENTITY_ADMIN' && String(user.entity_id) !== String(entityId)) {
     return json(403, { success:false, error:'Forbidden: Cannot access this entity' }, headers);
   }
 

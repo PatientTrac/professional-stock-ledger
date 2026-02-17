@@ -1,0 +1,236 @@
+/* ===========================================
+   CONTACT PAGE SPECIFIC STYLES
+   =========================================== */
+
+.contact-section {
+  padding: 4rem 0 6rem;
+}
+
+.contact-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3rem;
+}
+
+@media (min-width: 1024px) {
+  .contact-grid {
+    grid-template-columns: 1.2fr 1fr;
+  }
+}
+
+/* Contact Form */
+.contact-form-wrapper {
+  background: var(--gradient-card);
+  border: 1px solid hsla(var(--border), 0.5);
+  border-radius: 1.5rem;
+  padding: 2.5rem;
+}
+
+.contact-form-wrapper h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.contact-form-wrapper > p {
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 2rem;
+}
+
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Contact Info Sidebar */
+.contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.info-card,
+.quick-links-card,
+.social-card {
+  background: var(--gradient-card);
+  border: 1px solid hsla(var(--border), 0.5);
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.info-card h3,
+.quick-links-card h3,
+.social-card h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+}
+
+.info-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.info-item {
+  display: flex;
+  gap: 1rem;
+}
+
+.info-icon {
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsla(var(--primary), 0.2);
+  border-radius: 0.75rem;
+  color: hsl(var(--primary));
+  flex-shrink: 0;
+}
+
+.info-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.info-content h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.info-content a,
+.info-content span {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+  transition: color 0.3s ease;
+}
+
+.info-content a:hover {
+  color: hsl(var(--primary));
+}
+
+/* Quick Links */
+.quick-links {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.quick-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: hsl(var(--navy-800));
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+  transition: all 0.3s ease;
+}
+
+.quick-link:hover {
+  background: hsla(var(--primary), 0.2);
+  color: hsl(var(--primary));
+}
+
+.quick-link svg {
+  flex-shrink: 0;
+}
+
+/* Social Links Large */
+.social-links-large {
+  display: flex;
+  gap: 1rem;
+}
+
+.social-link-large {
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(var(--navy-800));
+  border-radius: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  transition: all 0.3s ease;
+}
+
+.social-link-large:hover {
+  background: hsl(var(--primary));
+  color: hsl(var(--navy-900));
+}
+
+/* Map Section */
+.map-section {
+  padding: 0 0 6rem;
+}
+
+.map-placeholder {
+  background: var(--gradient-card);
+  border: 1px solid hsla(var(--border), 0.5);
+  border-radius: 1.5rem;
+  padding: 4rem;
+  text-align: center;
+}
+
+.map-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.map-content svg {
+  color: hsl(var(--primary));
+}
+
+.map-content h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.map-content p {
+  color: hsl(var(--muted-foreground));
+}
+
+/* Form Success State */
+.form-success {
+  display: none;
+  text-align: center;
+  padding: 3rem;
+}
+
+.form-success.show {
+  display: block;
+}
+
+.form-success svg {
+  color: hsl(var(--primary));
+  margin-bottom: 1rem;
+}
+
+.form-success h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.form-success p {
+  color: hsl(var(--muted-foreground));
+}

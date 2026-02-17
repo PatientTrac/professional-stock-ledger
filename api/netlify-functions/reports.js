@@ -53,56 +53,90 @@ async function handleOwnershipReport(event, params) {
     
     // Check entity scope
     let targetEntityId;
+    const allEntities = user.role === 'SUPER_ADMIN' && !entity_id;
     if (user.role === 'SUPER_ADMIN') {
-        targetEntityId = entity_id || user.entity_id;
+        targetEntityId = entity_id || null;
     } else {
         targetEntityId = user.entity_id;
     }
     
     try {
         // Get entity information
-        const entityResult = await query(`
-            SELECT id, name, legal_name, address, city, state, 
-                   country, zip_code, phone, email
-            FROM entities
-            WHERE id = $1
-        `, [targetEntityId]);
-        
-        if (entityResult.rows.length === 0) {
-            return {
-                statusCode: 404,
-                headers,
-                body: JSON.stringify({ 
-                    success: false,
-                    error: 'Entity not found'
-                })
-            };
+        let entity = null;
+        if (targetEntityId) {
+            const entityResult = await query(`
+                SELECT id, name, legal_name, address, city, state, 
+                       country, zip_code, phone, email
+                FROM entities
+                WHERE id = $1
+            `, [targetEntityId]);
+            
+            if (entityResult.rows.length === 0) {
+                return {
+                    statusCode: 404,
+                    headers,
+                    body: JSON.stringify({ 
+                        success: false,
+                        error: 'Entity not found'
+                    })
+                };
+            }
+            entity = entityResult.rows[0];
+        } else {
+            entity = { id: null, name: 'All Entities' };
         }
-        
-        const entity = entityResult.rows[0];
+		
+											
 
-        // Get all active stock types for this entity (for dynamic columns)
-        const stockTypesResult = await query(`
-            SELECT est.id, est.stock_type, est.display_name, est.supports_series
-            FROM entity_stock_types est
-            WHERE est.entity_id = $1 AND est.is_active = TRUE
-            ORDER BY 
-                CASE est.stock_type 
-                    WHEN 'COMMON' THEN 1 
-                    WHEN 'PREFERRED' THEN 2 
-                    WHEN 'WARRANT' THEN 3 
-                    ELSE 4 
-                END
-        `, [targetEntityId]);
+        // Get all active stock types (for one entity or all entities for SUPER_ADMIN)
+        let stockTypesResult;
+        if (targetEntityId) {
+            stockTypesResult = await query(`
+                SELECT est.id, est.stock_type, est.display_name, est.supports_series
+                FROM entity_stock_types est
+                WHERE est.entity_id = $1 AND est.is_active = TRUE
+                ORDER BY 
+                    CASE est.stock_type 
+                        WHEN 'COMMON' THEN 1 
+                        WHEN 'PREFERRED' THEN 2 
+                        WHEN 'WARRANT' THEN 3 
+                        ELSE 4 
+                    END
+            `, [targetEntityId]);
+        } else {
+            stockTypesResult = await query(`
+                SELECT est.id, est.stock_type, est.display_name, est.supports_series
+                FROM entity_stock_types est
+                WHERE est.is_active = TRUE
+                ORDER BY 
+                    CASE est.stock_type 
+                        WHEN 'COMMON' THEN 1 
+                        WHEN 'PREFERRED' THEN 2 
+                        WHEN 'WARRANT' THEN 3 
+                        ELSE 4 
+                    END
+            `);
+        }
 
-        // Get all active series for this entity's stock types
-        const seriesResult = await query(`
-            SELECT ess.id, ess.entity_stock_type_id, ess.series, est.stock_type
-            FROM entity_stock_series ess
-            JOIN entity_stock_types est ON est.id = ess.entity_stock_type_id
-            WHERE est.entity_id = $1 AND ess.is_active = TRUE AND est.is_active = TRUE
-            ORDER BY est.stock_type, ess.series
-        `, [targetEntityId]);
+        // Get all active series
+        let seriesResult;
+        if (targetEntityId) {
+            seriesResult = await query(`
+                SELECT ess.id, ess.entity_stock_type_id, ess.series, est.stock_type
+                FROM entity_stock_series ess
+                JOIN entity_stock_types est ON est.id = ess.entity_stock_type_id
+                WHERE est.entity_id = $1 AND ess.is_active = TRUE AND est.is_active = TRUE
+                ORDER BY est.stock_type, ess.series
+            `, [targetEntityId]);
+        } else {
+            seriesResult = await query(`
+                SELECT ess.id, ess.entity_stock_type_id, ess.series, est.stock_type
+                FROM entity_stock_series ess
+                JOIN entity_stock_types est ON est.id = ess.entity_stock_type_id
+                WHERE ess.is_active = TRUE AND est.is_active = TRUE
+                ORDER BY est.stock_type, ess.series
+            `);
+        }
         
         // Build column definitions for grid (stock_types + series)
         const columns = [];
@@ -138,6 +172,8 @@ async function handleOwnershipReport(event, params) {
         });
 
         // Get ownership data grouped by shareholder, stock type, and series (using IDs)
+        // Note: Cancellations and transfers-out are stored with NEGATIVE shares
+        // So we just SUM all shares for the shareholder
         let queryText = `
             WITH shareholder_balances AS (
                 SELECT 
@@ -156,26 +192,26 @@ async function handleOwnershipReport(event, params) {
                     s.is_active as shareholder_active,
                     st.entity_stock_type_id,
                     st.entity_stock_series_id,
-                    COALESCE(SUM(
-                        CASE 
-                            WHEN st.transaction_type = 'ISSUANCE' THEN st.shares
-                            WHEN st.transaction_type = 'TRANSFER' AND st.to_shareholder_id = s.id THEN st.shares
-                            WHEN st.transaction_type = 'TRANSFER' AND st.from_shareholder_id = s.id THEN -st.shares
-                            WHEN st.transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN -st.shares
-                            ELSE 0
-                        END
-                    ), 0) as current_shares,
+								 
+							 
+																				
+																												
+																												   
+																									  
+								  
+						   
+                    COALESCE(SUM(st.shares), 0) as current_shares,
                     MIN(CASE 
                         WHEN st.transaction_type = 'ISSUANCE' THEN st.transaction_date
                         ELSE NULL
                     END) as first_issue_date
                 FROM shareholders s
                 LEFT JOIN share_transactions st ON s.id = st.shareholder_id
-                WHERE s.entity_id = $1
+                WHERE ${targetEntityId ? 's.entity_id = $1' : '1=1'}
         `;
         
-        const queryParams = [targetEntityId];
-        let paramCount = 1;
+        const queryParams = targetEntityId ? [targetEntityId] : [];
+        let paramCount = targetEntityId ? 1 : 0;
         
         if (entity_stock_type_id) {
             paramCount++;

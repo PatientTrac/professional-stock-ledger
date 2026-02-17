@@ -101,7 +101,7 @@ async function handleRegister(body) {
     INSERT INTO users (entity_id, email, password_hash, full_name, role, is_active)
     VALUES ($1, $2, $3, $4, $5, TRUE)
     RETURNING id, email, full_name, role, entity_id
-  `, [defaultEntityId, email.toLowerCase(), hashed, full_name, 'USER']);
+  `, [defaultEntityId, email.toLowerCase(), hashed, full_name, 'VIEWER']);
 
   const newUser = result.rows[0];
   const token = generateToken(newUser);
@@ -127,7 +127,7 @@ async function handleCreateUser(event, body) {
     return json(400, { success:false, error:'email, password, full_name, role are required' }, headers);
   }
 
-  const validRoles = ['SUPER_ADMIN', 'ADMIN', 'USER'];
+  const validRoles = ['SUPER_ADMIN', 'ENTITY_ADMIN', 'MANAGER', 'VIEWER'];
   if (!validRoles.includes(role)) {
     return json(400, { success:false, error:'Invalid role' }, headers);
   }

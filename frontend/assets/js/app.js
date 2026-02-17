@@ -65,7 +65,17 @@ function isSuperAdmin() {
 
 function isAdmin() {
   const user = getCurrentUser();
-  return user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  return user?.role === 'SUPER_ADMIN' || user?.role === 'ENTITY_ADMIN';
+}
+
+function isManager() {
+  const user = getCurrentUser();
+  return user?.role === 'SUPER_ADMIN' || user?.role === 'ENTITY_ADMIN' || user?.role === 'MANAGER';
+}
+
+function isViewer() {
+  const user = getCurrentUser();
+  return user?.role === 'VIEWER';
 }
 
 function logout() {
@@ -123,7 +133,8 @@ async function initApp() {
 
   state.token = token;
   state.user = user;
-  state.filters.entityId = user.entity_id;
+  // For SUPER_ADMIN, don't pre-select an entity - show all entities
+  state.filters.entityId = isSuperAdmin() ? null : user.entity_id;
 
   updateUserDisplay();
   setupRoleBasedUI();
@@ -181,10 +192,33 @@ function setupRoleBasedUI() {
     adminButton.classList.toggle('hidden', !isAdmin());
   }
 
-  // Show admin toolbar for admin users
+  // Show toolbar for all non-viewer users
   const adminToolbar = document.getElementById('adminToolbar');
   if (adminToolbar) {
-    adminToolbar.classList.toggle('hidden', !isAdmin());
+    if (isViewer()) {
+      adminToolbar.classList.add('hidden');
+    } else {
+      adminToolbar.classList.remove('hidden');
+    }
+  }
+
+  // Corporate Actions dropdown: only admin/superadmin
+  const corporateActionsDropdown = document.getElementById('corporateActionsDropdown');
+  if (corporateActionsDropdown) {
+    const user = getCurrentUser();
+    if (user && user.role !== 'SUPER_ADMIN' && user.role !== 'ENTITY_ADMIN') {
+																
+																	   
+																	   
+      corporateActionsDropdown.style.display = 'none';
+    }
+																
+  }
+
+  // VIEWER: hide all action toolbar entirely
+  if (isViewer()) {
+    const adminButton = document.getElementById('adminButton');
+    if (adminButton) adminButton.classList.add('hidden');
   }
 }
 
@@ -233,7 +267,7 @@ async function loadEntities() {
           const opt = document.createElement('option');
           opt.value = entity.id;
           opt.textContent = entity.name;
-          if (entity.id === state.filters.entityId) opt.selected = true;
+          if (state.filters.entityId && entity.id === state.filters.entityId) opt.selected = true;
           entityFilter.appendChild(opt);
         });
       }
@@ -246,7 +280,21 @@ async function loadEntities() {
 }
 
 async function loadEntityInfo() {
-  const entityId = state.filters.entityId || state.user.entity_id;
+  const entityId = state.filters.entityId;
+  
+  // If no entity selected (SUPER_ADMIN "All Entities" mode), show generic header
+  if (!entityId) {
+    const entityName = document.getElementById('entityName');
+    if (entityName) entityName.textContent = 'All Entities';
+    
+    const entityDetails = document.getElementById('entityDetails');
+    if (entityDetails) entityDetails.style.display = 'none';
+    return;
+  }
+  
+  // Show entity details when a specific entity is selected
+  const entityDetails = document.getElementById('entityDetails');
+  if (entityDetails) entityDetails.style.display = '';
   
   try {
     const data = await apiCall(`/entities?action=get&entityId=${entityId}`);
@@ -279,10 +327,12 @@ async function loadEntityInfo() {
 async function handleEntityChange() {
   const entityFilter = document.getElementById('entityFilter');
   if (entityFilter && isSuperAdmin()) {
-    const newEntityId = entityFilter.value || state.user.entity_id;
+    const newEntityId = entityFilter.value || null;
     if (newEntityId !== state.filters.entityId) {
       state.filters.entityId = newEntityId;
-      await loadStockTypes();
+      if (newEntityId) {
+        await loadStockTypes();
+      }
       await loadEntityInfo();
       await loadOwnership();
     }
@@ -360,11 +410,14 @@ async function handleStockTypeChange() {
 
 /* ================= OWNERSHIP GRID ================= */
 async function loadOwnership() {
-  const entityId = isSuperAdmin() && state.filters.entityId 
-    ? state.filters.entityId 
-    : state.user.entity_id;
+  const entityId = isSuperAdmin() ? state.filters.entityId : state.user.entity_id;
+							 
+						   
   
-  let url = `/reports?action=ownership-report&entity_id=${entityId}`;
+  let url = `/reports?action=ownership-report`;
+  if (entityId) {
+    url += `&entity_id=${entityId}`;
+  }
   
   if (state.filters.stockTypeId) {
     url += `&entity_stock_type_id=${state.filters.stockTypeId}`;
@@ -411,15 +464,12 @@ async function loadOwnership() {
 }
 
 async function preloadBookEntries() {
-  // Pre-load book entries from the database for all shareholders on grid load
-  const entityId = isSuperAdmin() && state.filters.entityId 
-    ? state.filters.entityId 
-    : state.user.entity_id;
-  
-  // Load book entries for each shareholder in parallel
+  const entityId = isSuperAdmin() ? state.filters.entityId : state.user.entity_id;													   
   const promises = state.gridData.map(async (sh) => {
     try {
-      const data = await apiCall(`/ledger?action=list-book-entries&entity_id=${entityId}&shareholder_id=${sh.shareholder_id}`);
+      let url = `/ledger?action=list-book-entries&shareholder_id=${sh.shareholder_id}`;
+      if (entityId) url += `&entity_id=${entityId}`;
+      const data = await apiCall(url);
       state.shareholderBookEntries[sh.shareholder_id] = data.entries || [];
     } catch (error) {
       console.error(`Error loading book entries for shareholder ${sh.shareholder_id}:`, error);
@@ -999,6 +1049,7 @@ function openShareholderModal(shareholder = null) {
     document.getElementById('formCity').value = shareholder.city || '';
     document.getElementById('formState').value = shareholder.state || '';
     document.getElementById('formZipCode').value = shareholder.zip_code || '';
+    document.getElementById('formCountry').value = shareholder.country || '';
     document.getElementById('formShareholderType').value = shareholder.shareholder_type || 'INDIVIDUAL';
     document.getElementById('formTaxId').value = shareholder.tax_id || '';
   } else {
@@ -1015,42 +1066,68 @@ function closeShareholderModal() {
 
 async function handleShareholderSubmit(event) {
   event.preventDefault();
+  const btn = event.target.querySelector('button[type="submit"]');
+																		   
+								 
   
-  const shareholderId = document.getElementById('formShareholderId').value;
-  const isEdit = !!shareholderId;
+				   
+															 
+																		 
+															  
+															  
+																  
+															
+															  
+																   
+																  
+																		   
+															   
+															 
+	
   
-  const payload = {
-    full_name: document.getElementById('formFullName').value,
-    external_id: document.getElementById('formExternalId').value || null,
-    email: document.getElementById('formEmail').value || null,
-    phone: document.getElementById('formPhone').value || null,
-    address: document.getElementById('formAddress').value || null,
-    city: document.getElementById('formCity').value || null,
-    state: document.getElementById('formState').value || null,
-    zip_code: document.getElementById('formZipCode').value || null,
-    shareholder_type: document.getElementById('formShareholderType').value,
-    tax_id: document.getElementById('formTaxId').value || null,
-    entity_id: state.filters.entityId || state.user.entity_id
-  };
+			   
+							   
+   
   
-  if (isEdit) {
-    payload.id = shareholderId;
-  }
-  
-  try {
-													
-    await apiCall('/shareholders?action=' + (isEdit ? 'update' : 'create'), {
-      method: isEdit ? 'PUT' : 'POST',
-      body: JSON.stringify(payload)
-    });
+  withSubmitGuard(btn, async () => {
+    const shareholderId = document.getElementById('formShareholderId').value;
+    const isEdit = !!shareholderId;
+								   
+	   
     
-    closeShareholderModal();
-    showToast(isEdit ? 'Shareholder updated' : 'Shareholder created', 'success');
-    await loadOwnership();
-  } catch (error) {
-    console.error('Shareholder save error:', error);
-    showToast(error.message || 'Failed to save shareholder', 'error');
-  }
+    const payload = {
+      full_name: document.getElementById('formFullName').value,
+      external_id: document.getElementById('formExternalId').value || null,
+      email: document.getElementById('formEmail').value || null,
+      phone: document.getElementById('formPhone').value || null,
+      address: document.getElementById('formAddress').value || null,
+      city: document.getElementById('formCity').value || null,
+      state: document.getElementById('formState').value || null,
+      zip_code: document.getElementById('formZipCode').value || null,
+      country: document.getElementById('formCountry').value || null,
+      shareholder_type: document.getElementById('formShareholderType').value,
+      tax_id: document.getElementById('formTaxId').value || null,
+      entity_id: state.filters.entityId || state.user.entity_id
+    };
+    
+    if (isEdit) {
+      payload.id = shareholderId;
+    }
+    
+    try {
+      await apiCall('/shareholders?action=' + (isEdit ? 'update' : 'create'), {
+        method: isEdit ? 'PUT' : 'POST',
+        body: JSON.stringify(payload)
+      });
+      
+      closeShareholderModal();
+      showToast(isEdit ? 'Shareholder updated' : 'Shareholder created', 'success');
+      await loadOwnership();
+    } catch (error) {
+      console.error('Shareholder save error:', error);
+      showToast(error.message || 'Failed to save shareholder', 'error');
+    }
+  });
 }
 
 /* ================= TOAST NOTIFICATIONS ================= */
@@ -1075,6 +1152,18 @@ function showToast(message, type = 'success') {
   setTimeout(() => {
     toast.remove();
   }, 5000);
+}
+
+/* ================= SUBMIT BUTTON GUARD ================= */
+function withSubmitGuard(btn, asyncFn) {
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.dataset.originalText = btn.textContent;
+  btn.textContent = 'Processing...';
+  asyncFn().finally(() => {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.originalText;
+  });
 }
 
 /* ================= UTILITY FUNCTIONS ================= */
@@ -1130,7 +1219,7 @@ function closeAllModals() {
   closeModal('issueSharesModal');
   closeModal('transferStockModal');
   closeModal('cancelStockModal');
-  closeModal('reverseSplitModal');
+  closeModal('splitModal');
   closeModal('capTableModal');
 }
 
@@ -1177,29 +1266,41 @@ async function handleIssueStockTypeChange() {
 
 async function handleIssueSharesSubmit(event) {
   event.preventDefault();
+  const btn = event.target.querySelector('button[type="submit"]');
+				   
+																	  
+																		  
+																				 
+																   
+																		 
+																				  
+															  
+	
   
-  const payload = {
-    shareholder_id: document.getElementById('issueShareholder').value,
-    entity_stock_type_id: document.getElementById('issueStockType').value,
-    entity_stock_series_id: document.getElementById('issueSeries').value || null,
-    shares: parseInt(document.getElementById('issueShares').value),
-    transaction_date: document.getElementById('issueDate').value || null,
-    certificate_number: document.getElementById('issueCertificate').value || null,
-    notes: document.getElementById('issueNotes').value || null
-  };
-  
-  try {
-    await apiCall('/ledger?action=issue-shares', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
+  withSubmitGuard(btn, async () => {
+    const payload = {
+      shareholder_id: document.getElementById('issueShareholder').value,
+      entity_stock_type_id: document.getElementById('issueStockType').value,
+      entity_stock_series_id: document.getElementById('issueSeries').value || null,
+      shares: parseInt(document.getElementById('issueShares').value),
+      transaction_date: document.getElementById('issueDate').value || null,
+      certificate_number: document.getElementById('issueCertificate').value || null,
+      notes: document.getElementById('issueNotes').value || null
+    };
     
-    closeModal('issueSharesModal');
-    showToast('Shares issued successfully', 'success');
-    await loadOwnership();
-  } catch (error) {
-    showToast(error.message || 'Failed to issue shares', 'error');
-  }
+    try {
+      await apiCall('/ledger?action=issue-shares', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      
+      closeModal('issueSharesModal');
+      showToast('Shares issued successfully', 'success');
+      await loadOwnership();
+    } catch (error) {
+      showToast(error.message || 'Failed to issue shares', 'error');
+    }
+  });
 }
 
 /* ================= TRANSFER STOCK ================= */
@@ -1347,11 +1448,7 @@ function handleTransferToTypeChange() {
   const existingGroup = document.getElementById('existingReceiverGroup');
   const newFields = document.getElementById('newShareholderFields');
   
-  if (toType === 'existing') {
-										 
-										 
-															   
-		  
+  if (toType === 'existing') {		  
     existingGroup.style.display = 'block';
     newFields.classList.add('hidden');
   } else {
@@ -1362,67 +1459,109 @@ function handleTransferToTypeChange() {
 
 async function handleTransferStockSubmit(event) {
   event.preventDefault();
+  const btn = event.target.querySelector('button[type="submit"]');
+																 
+																		  
+																			   
   
-  const toType = document.getElementById('transferToType').value;
-  const fromId = document.getElementById('transferFromShareholder').value;
-  let toShareholderId = document.getElementById('transferToShareholder').value;
+								   
+															
+																		 
+		   
+   
   
-  // Validate from/to are different
-  if (toType === 'existing' && fromId === toShareholderId) {
-    showToast('Cannot transfer shares to the same shareholder', 'error');
-    return;
-  }
-  
-  // If creating new shareholder, create them first
-  if (toType === 'new') {
-    const newShareholderName = document.getElementById('transferNewName').value;
-    const newShareholderEmail = document.getElementById('transferNewEmail').value;
+  withSubmitGuard(btn, async () => {
+    const toType = document.getElementById('transferToType').value;
+    const fromId = document.getElementById('transferFromShareholder').value;
+    let toShareholderId = document.getElementById('transferToShareholder').value;
     
-    if (!newShareholderName) {
-      showToast('Receiver name is required', 'error');
+    // Validate from/to are different
+    if (toType === 'existing' && fromId === toShareholderId) {
+      showToast('Cannot transfer shares to the same shareholder', 'error');
       return;
     }
+    
+    // If creating new shareholder, create them first
+    if (toType === 'new') {
+      const newShareholderName = document.getElementById('transferNewName').value;
+      const newShareholderEmail = document.getElementById('transferNewEmail').value;
+      
+      if (!newShareholderName) {
+        showToast('Receiver name is required', 'error');
+        return;
+      }
+      
+      try {
+        const newSh = await apiCall('/shareholders?action=create', {
+          method: 'POST',
+          body: JSON.stringify({
+            full_name: newShareholderName,
+            email: newShareholderEmail || null,
+            entity_id: state.filters.entityId || state.user.entity_id
+          })
+        });
+        toShareholderId = newSh.shareholder.id;
+      } catch (error) {
+        showToast('Failed to create new shareholder: ' + error.message, 'error');
+        return;
+      }
+    }
+    
+    const notes = buildTransferNotes();
+    
+    const payload = {
+      from_shareholder_id: fromId,
+      to_shareholder_id: toShareholderId,
+      entity_stock_type_id: document.getElementById('transferStockType').value,
+      entity_stock_series_id: document.getElementById('transferSeries').value || null,
+      shares: parseInt(document.getElementById('transferShares').value),
+      transaction_date: document.getElementById('transferDate').value || null,
+      notes
+    };
     
     try {
-      const newSh = await apiCall('/shareholders?action=create', {
+      await apiCall('/ledger?action=transfer-shares', {
         method: 'POST',
-        body: JSON.stringify({
-          full_name: newShareholderName,
-          email: newShareholderEmail || null,
-          entity_id: state.filters.entityId || state.user.entity_id
-        })
+        body: JSON.stringify(payload)
+										
+											 
+																   
+		  
       });
-      toShareholderId = newSh.shareholder.id;
+      
+      closeModal('transferStockModal');
+      showToast('Stock transferred successfully', 'success');
+      await loadOwnership();
     } catch (error) {
-      showToast('Failed to create new shareholder: ' + error.message, 'error');
-      return;
+      showToast(error.message || 'Failed to transfer stock', 'error');
+			 
     }
-  }
+   
   
-  const notes = buildTransferNotes();
+									 
   
-  const payload = {
-    from_shareholder_id: fromId,
-    to_shareholder_id: toShareholderId,
-    entity_stock_type_id: document.getElementById('transferStockType').value,
-    entity_stock_series_id: document.getElementById('transferSeries').value || null,
-    shares: parseInt(document.getElementById('transferShares').value),
-    transaction_date: document.getElementById('transferDate').value || null,
-    notes
-  };
+				   
+								
+									   
+																			 
+																					
+																	  
+																			
+		 
+	
   
-  try {
-    await apiCall('/ledger?action=transfer-shares', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-    
-    closeModal('transferStockModal');
-    showToast('Stock transferred successfully', 'success');
-    await loadOwnership();
-  } catch (error) {
-    showToast(error.message || 'Failed to transfer stock', 'error');
-  }
+	   
+													 
+					 
+								   
+  });
+	
+									 
+														   
+						  
+				   
+																	
+   
 }
 
 function buildTransferNotes() {
@@ -1562,52 +1701,86 @@ async function handleCancelStockTypeChange() {
 
 async function handleCancelStockSubmit(event) {
   event.preventDefault();
+  const btn = event.target.querySelector('button[type="submit"]');
+				   
+																							 
+																							  
+																											 
+															  
+											  
   
-  const notes = [];
-  if (document.getElementById('cancelNotaryVerified').checked) notes.push('Notary Verified');
-  if (document.getElementById('cancelStockPower').checked) notes.push('Stock Power Verified');
-  if (document.getElementById('cancelLetterOfInstruction').checked) notes.push('Letter of Instruction (DV)');
-  const reason = document.getElementById('cancelNotes').value;
-  if (reason) notes.push('Reason: ' + reason);
+				   
+																	   
+																		   
+																				  
+																	
+																		  
+								   
+	
   
-  const payload = {
-    shareholder_id: document.getElementById('cancelShareholder').value,
-    entity_stock_type_id: document.getElementById('cancelStockType').value,
-    entity_stock_series_id: document.getElementById('cancelSeries').value || null,
-    shares: parseInt(document.getElementById('cancelShares').value),
-    transaction_date: document.getElementById('cancelDate').value || null,
-    notes: notes.join('; ') || null
-  };
-  
-  try {
-    await apiCall('/ledger?action=cancel-shares', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
+  withSubmitGuard(btn, async () => {
+    const notes = [];
+    if (document.getElementById('cancelNotaryVerified').checked) notes.push('Notary Verified');
+    if (document.getElementById('cancelStockPower').checked) notes.push('Stock Power Verified');
+    if (document.getElementById('cancelLetterOfInstruction').checked) notes.push('Letter of Instruction (DV)');
+    const reason = document.getElementById('cancelNotes').value;
+    if (reason) notes.push('Reason: ' + reason);
     
-    closeModal('cancelStockModal');
-    showToast('Stock cancelled successfully', 'success');
-    await loadOwnership();
-  } catch (error) {
-    showToast(error.message || 'Failed to cancel stock', 'error');
-  }
+    const payload = {
+      shareholder_id: document.getElementById('cancelShareholder').value,
+      entity_stock_type_id: document.getElementById('cancelStockType').value,
+      entity_stock_series_id: document.getElementById('cancelSeries').value || null,
+      shares: parseInt(document.getElementById('cancelShares').value),
+      transaction_date: document.getElementById('cancelDate').value || null,
+      notes: notes.join('; ') || null
+    };
+    
+    try {
+      await apiCall('/ledger?action=cancel-shares', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      
+      closeModal('cancelStockModal');
+      showToast('Stock cancelled successfully', 'success');
+      await loadOwnership();
+    } catch (error) {
+      showToast(error.message || 'Failed to cancel stock', 'error');
+    }
+  });
 }
 
-/* ================= REVERSE SPLIT ================= */
-function openReverseSplitModal() {
-  const form = document.getElementById('reverseSplitForm');
+/* ================= STOCK SPLIT (FORWARD & REVERSE) ================= */
+function openSplitModal(direction) {
+  const form = document.getElementById('splitForm');
   if (form) form.reset();
-  
+
+  document.getElementById('splitDirection').value = direction;
+
+  const isReverse = direction === 'REVERSE';
+  document.getElementById('splitModalTitle').textContent = isReverse ? 'Reverse Stock Split' : 'Forward Stock Split';
+  document.getElementById('splitFormulaTitle').textContent = isReverse ? 'Reverse Split Formula' : 'Forward Split Formula';
+  document.getElementById('splitOldLabel').textContent = isReverse ? 'Old Shares (Consolidating)' : 'Old Shares (Current)';
+  document.getElementById('splitNewLabel').textContent = isReverse ? 'New Shares (Result)' : 'New Shares (Multiplied)';
+  document.getElementById('splitHelpText').textContent = isReverse
+    ? 'Example: 10:1 reverse split means 10 old shares become 1 new share'
+    : 'Example: 1:2 forward split means 1 old share becomes 2 new shares';
+  document.getElementById('splitSubmitBtn').textContent = isReverse ? 'Execute Reverse Split' : 'Execute Forward Split';
+
+  document.getElementById('splitOldShares').value = isReverse ? 10 : 1;
+  document.getElementById('splitNewShares').value = isReverse ? 1 : 2;
+
   populateStockTypeDropdown('splitStockType');
   
   document.getElementById('splitEffectiveDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('splitSeries').innerHTML = '<option value="">All Series</option>';
   document.getElementById('splitSeries').disabled = true;
-  document.getElementById('splitOldShares').value = 10;
-  document.getElementById('splitNewShares').value = 1;
   
-  openModal('reverseSplitModal');
+  openModal('splitModal');
 }
+
+// Keep backward compat for old button references
+function openReverseSplitModal() { openSplitModal('REVERSE'); }
 
 async function handleSplitStockTypeChange() {
   const stockTypeSelect = document.getElementById('splitStockType');
@@ -1625,33 +1798,61 @@ async function handleSplitStockTypeChange() {
   await loadSeriesForDropdown(stockTypeSelect.value, seriesSelect);
 }
 
-async function handleReverseSplitSubmit(event) {
+async function handleSplitSubmit(event) {
   event.preventDefault();
+  const btn = event.target.querySelector('button[type="submit"]');
+																	
+																			  
+																			  
   
-  const oldShares = parseInt(document.getElementById('splitOldShares').value);
-  const newShares = parseInt(document.getElementById('splitNewShares').value);
-  
-  if (oldShares <= newShares) {
-    showToast('For a reverse split, old shares must be greater than new shares', 'warning');
-    return;
-  }
-  
-  // Note: Reverse split would need a dedicated API endpoint
-  const payload = {
-    entity_stock_type_id: document.getElementById('splitStockType').value,
-    entity_stock_series_id: document.getElementById('splitSeries').value || null,
-    old_shares: oldShares,
-    new_shares: newShares,
-    effective_date: document.getElementById('splitEffectiveDate').value,
-    board_resolution_verified: document.getElementById('splitBoardResolution').checked,
-    sos_amendment_verified: document.getElementById('splitAmendmentSOS').checked,
-    notes: document.getElementById('splitNotes').value || null
-  };
-  
-  showToast('Reverse split functionality requires backend implementation', 'warning');
-  console.log('Reverse split payload:', payload);
-  closeModal('reverseSplitModal');
+  withSubmitGuard(btn, async () => {
+    const direction = document.getElementById('splitDirection').value;
+    const oldShares = parseInt(document.getElementById('splitOldShares').value);
+    const newShares = parseInt(document.getElementById('splitNewShares').value);
+    
+    if (direction === 'REVERSE' && oldShares <= newShares) {
+      showToast('For a reverse split, old shares must be greater than new shares', 'warning');
+      return;
+    }
+    if (direction === 'FORWARD' && newShares <= oldShares) {
+      showToast('For a forward split, new shares must be greater than old shares', 'warning');
+      return;
+    }
+
+    if (!state.filters.entityId && !isSuperAdmin()) {
+      showToast('Please select an entity first', 'warning');
+      return;
+    }
+
+    const payload = {
+      entity_stock_type_id: document.getElementById('splitStockType').value,
+      entity_stock_series_id: document.getElementById('splitSeries').value || null,
+      old_shares: oldShares,
+      new_shares: newShares,
+      split_direction: direction,
+      effective_date: document.getElementById('splitEffectiveDate').value,
+      rounding: document.getElementById('splitRounding').value,
+      notes: document.getElementById('splitNotes').value || null,
+    };
+
+    try {
+      const data = await apiCall('/ledger?action=execute-split', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      const label = direction === 'REVERSE' ? 'Reverse' : 'Forward';
+      showToast(`${label} split executed — ${data.split.affected_holders} shareholder(s) adjusted`, 'success');
+      closeModal('splitModal');
+      await loadOwnership();
+    } catch (error) {
+      showToast(error.message || 'Split failed', 'error');
+    }
+  });
 }
+
+// Legacy handler kept for backward compat
+async function handleReverseSplitSubmit(event) { return handleSplitSubmit(event); }
 
 /* ================= PRINT ================= */
 function printLedger() {
@@ -1740,4 +1941,67 @@ async function loadSeriesForDropdown(stockTypeId, seriesSelect) {
     console.error('Error loading series:', error);
     seriesSelect.innerHTML = '<option value="">Error loading series</option>';
   }
+}
+
+/* ================= CORPORATE ACTIONS DROPDOWN ================= */
+function toggleCorporateActionsMenu() {
+  const menu = document.getElementById('corporateActionsMenu');
+  if (menu) menu.classList.toggle('hidden');
+}
+
+function closeCorporateActionsMenu() {
+  const menu = document.getElementById('corporateActionsMenu');
+  if (menu) menu.classList.add('hidden');
+}
+
+// Close corporate actions dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('corporateActionsDropdown');
+  if (dropdown && !dropdown.contains(e.target)) {
+    closeCorporateActionsMenu();
+  }
+});
+
+/* ================= FILE UPLOAD HANDLER ================= */
+function handleFileSelect(input, listId) {
+  const listEl = document.getElementById(listId);
+  if (!listEl) return;
+  
+  listEl.innerHTML = '';
+  const files = input.files;
+  
+  if (files.length === 0) return;
+  
+  Array.from(files).forEach((file, idx) => {
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    const sizeKB = (file.size / 1024).toFixed(1);
+    item.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+      </svg>
+      <span class="file-name">${escapeHtml(file.name)}</span>
+      <span class="file-size">${sizeKB} KB</span>
+      <button type="button" class="file-remove" onclick="removeFile('${input.id}', ${idx}, '${listId}')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    `;
+    listEl.appendChild(item);
+  });
+}
+
+function removeFile(inputId, fileIdx, listId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  
+  const dt = new DataTransfer();
+  Array.from(input.files).forEach((file, i) => {
+    if (i !== fileIdx) dt.items.add(file);
+  });
+  input.files = dt.files;
+  handleFileSelect(input, listId);
 }

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pricing - AegisIQ Stock Ledger</title>
+  <meta name="description" content="Transparent pricing for AegisIQ Stock Ledger. Professional, Business, and Enterprise plans for private companies, funds, and complex capital structures.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/shared.css">
+  <link rel="stylesheet" href="/assets/css/pricing.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <nav class="nav-container">
+      <div class="nav-content">
+        <img src="/assets/brand/logo.svg" alt="AegisIQ Stock Ledger" class="logo-img" />
+        
+        <!-- Desktop Navigation -->
+        <div class="nav-links">
+          <a href="/" class="nav-link">Home</a>
+          <a href="pricing.html" class="nav-link active">Pricing</a>
+          <a href="about.html" class="nav-link">About</a>
+          <a href="contact.html" class="nav-link">Contact</a>
+        </div>
+
+        <!-- Auth Buttons -->
+        <div class="auth-buttons">
+          <a href="login.html" class="btn btn-ghost">Login</a>
+          <a href="login.html?mode=register" class="btn btn-hero">Sign Up Free</a>
+        </div>
+
+        <!-- Mobile Menu Toggle -->
+        <button class="mobile-menu-toggle" id="mobileMenuToggle">
+          <svg class="menu-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+          <svg class="close-icon hidden" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Mobile Menu -->
+      <div class="mobile-menu hidden" id="mobileMenu">
+        <a href="/" class="mobile-nav-link">Home</a>
+        <a href="pricing.html" class="mobile-nav-link">Pricing</a>
+        <a href="about.html" class="mobile-nav-link">About</a>
+        <a href="contact.html" class="mobile-nav-link">Contact</a>
+        <div class="mobile-auth">
+          <a href="login.html" class="btn btn-outline full-width">Login</a>
+          <a href="login.html?mode=register" class="btn btn-hero full-width">Sign Up Free</a>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Page Hero -->
+    <section class="page-hero">
+      <div class="badge">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>Simple, Credible Pricing</span>
+      </div>
+      <h1>Compliance-Grade <span class="text-gradient-gold">Equity Management</span></h1>
+      <p>Institutional-grade cap table software priced for real private companies. No hidden fees.</p>
+    </section>
+
+    <!-- Pricing Toggle -->
+    <section class="pricing-section">
+      <div class="container">
+        <div class="pricing-toggle">
+          <span class="toggle-label active" data-period="monthly">Monthly</span>
+          <button class="toggle-switch" id="pricingToggle">
+            <span class="toggle-slider"></span>
+          </button>
+          <span class="toggle-label" data-period="annual">Annual <span class="save-badge">Save 20%</span></span>
+        </div>
+
+        <!-- Pricing Cards -->
+        <div class="pricing-grid">
+          <!-- Professional Plan -->
+          <div class="pricing-card">
+            <div class="pricing-header">
+              <h3>Professional</h3>
+              <p>For private companies getting started</p>
+            </div>
+            <div class="pricing-price">
+              <span class="price monthly">$199</span>
+              <span class="price annual" style="display:none;">$159</span>
+              <span class="period">/month</span>
+            </div>
+            <ul class="pricing-features">
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                1 Entity / Company
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Up to 5 Users
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Unlimited Shareholders
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Share Issuance + Transfers
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Ownership Statements + CSV Export
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Stock Types UI
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Email Support
+              </li>
+            </ul>
+            <div class="pricing-extra-seats">Extra seats: $20/user/mo</div>
+            <a href="login.html?mode=register" class="btn btn-outline btn-lg" style="width:100%;">Subscribe — $199/mo</a>
+          </div>
+
+          <!-- Business Plan (Featured) -->
+          <div class="pricing-card featured">
+            <div class="featured-badge">Recommended</div>
+            <div class="pricing-header">
+              <h3>Business</h3>
+              <p>For firms with multiple operators</p>
+            </div>
+            <div class="pricing-price">
+              <span class="price monthly">$399</span>
+              <span class="price annual" style="display:none;">$319</span>
+              <span class="period">/month</span>
+            </div>
+            <ul class="pricing-features">
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                1 Entity / Company
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Up to 15 Users
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Unlimited Shareholders
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Multiple Stock Classes + Series
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Advanced Admin Controls
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Audit Snapshot Exports
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Priority Support
+              </li>
+            </ul>
+            <div class="pricing-extra-seats">Extra seats: $15/user/mo</div>
+            <a href="login.html?mode=register" class="btn btn-hero btn-lg" style="width:100%;">Subscribe — $399/mo</a>
+          </div>
+
+          <!-- Enterprise Plan -->
+          <div class="pricing-card">
+            <div class="pricing-header">
+              <h3>Enterprise</h3>
+              <p>For funds, holding companies & multi-entity groups</p>
+            </div>
+            <div class="pricing-price">
+              <span class="price">Custom</span>
+            </div>
+            <ul class="pricing-features">
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Multiple Entities (2+)
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Unlimited Users
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Entity-Level Admin Controls
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Consolidated Governance + Audit
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Blockchain Anchoring (Future)
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Dedicated Onboarding + Support
+              </li>
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                Custom SLA
+              </li>
+            </ul>
+            <div class="pricing-extra-seats">Seats: Custom</div>
+            <a href="contact.html" class="btn btn-outline btn-lg" style="width:100%;">Contact Sales</a>
+          </div>
+        </div>
+
+        <!-- Feature Comparison -->
+        <div class="comparison-section">
+          <h2>Compare <span class="text-gradient-gold">All Features</span></h2>
+          
+          <div class="comparison-table-wrapper">
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th>Feature</th>
+                  <th>Professional</th>
+                  <th>Business</th>
+                  <th>Enterprise</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Entities</td>
+                  <td>1</td>
+                  <td>1</td>
+                  <td>Multiple</td>
+                </tr>
+                <tr>
+                  <td>Users Included</td>
+                  <td>5</td>
+                  <td>15</td>
+                  <td>Unlimited</td>
+                </tr>
+                <tr>
+                  <td>Extra Seat Cost</td>
+                  <td>$20/user/mo</td>
+                  <td>$15/user/mo</td>
+                  <td>Custom</td>
+                </tr>
+                <tr>
+                  <td>Shareholders</td>
+                  <td>Unlimited</td>
+                  <td>Unlimited</td>
+                  <td>Unlimited</td>
+                </tr>
+                <tr>
+                  <td>Stock Issuance + Transfers</td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                </tr>
+                <tr>
+                  <td>Statements + CSV Export</td>
+							  
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                </tr>
+                <tr>
+                  <td>Stock Types UI</td>
+							  
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                </tr>
+                <tr>
+                  <td>Advanced Admin Controls</td>
+                  <td>—</td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                </tr>
+                <tr>
+                  <td>Audit Snapshot Exports</td>
+							  
+                  <td>—</td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                </tr>
+                <tr>
+                  <td>Multi-Entity</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                </tr>
+                <tr>
+                  <td>Blockchain Anchoring</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></td>
+                </tr>
+                <tr>
+                  <td>Support</td>
+                  <td>Email</td>
+                  <td>Priority</td>
+                  <td>Dedicated</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- FAQ -->
+        <div class="faq-section">
+          <h2>Frequently Asked <span class="text-gradient-gold">Questions</span></h2>
+          
+          <div class="faq-grid">
+            <div class="faq-item">
+              <h4>What is an entity?</h4>
+              <p>An entity is a single company or legal body whose cap table you manage. Professional and Business plans include 1 entity. Enterprise supports multiple entities with separate cap tables, registries, and permissions.</p>
+            </div>
+            <div class="faq-item">
+              <h4>Can I upgrade later?</h4>
+              <p>Yes, you can upgrade your plan at any time. Changes take effect immediately, and we'll prorate your billing accordingly.</p>
+            </div>
+            <div class="faq-item">
+              <h4>Do you support multiple stock classes?</h4>
+              <p>Absolutely. AegisIQ supports Common, Preferred, Warrants, and Options with detailed series and class-level granularity across all plans.</p>
+            </div>
+            <div class="faq-item">
+              <h4>Is the ledger auditable?</h4>
+              <p>Yes. Every action is logged with timestamps, user attribution, and immutable records. Business and Enterprise plans include audit snapshot exports.</p>
+            </div>
+            <div class="faq-item">
+              <h4>Do you offer annual billing?</h4>
+              <p>Yes! Annual billing saves you 20%. Toggle the pricing switch above to see annual rates.</p>
+            </div>
+            <div class="faq-item">
+              <h4>Is there a free trial?</h4>
+              <p>Yes! All plans come with a 14-day free trial. No credit card required to start.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer id="contact" class="footer">
+    <div class="footer-container">
+      <!-- Top Row -->
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="footer-logo">
+            <img src="/assets/brand/logo.svg" alt="AegisIQ" class="w-11 h-11 rounded" />
+          </div>
+          <div>
+            <span class="footer-brand-name">Aegis<span class="text-gradient-gold">IQ</span></span>
+            <p class="footer-tagline">Secure Your Equity Future with AegisIQ – Compliance Meets Innovation</p>
+          </div>
+        </div>
+
+        <div class="newsletter">
+          <p class="newsletter-title">Stay Updated</p>
+          <p class="newsletter-desc">Subscribe for insights on cap tables and private market trends</p>
+          <form class="newsletter-form" id="newsletterForm">
+            <input type="email" placeholder="Enter your email" class="newsletter-input" id="newsletterEmail" />
+            <button type="submit" class="btn btn-hero">Subscribe</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Links Grid -->
+      <div class="footer-links">
+        <div class="footer-column">
+          <h4>Company</h4>
+          <ul>
+            <li><a href="about.html">About</a></li>
+            <li><a href="#">Careers</a></li>
+            <li><a href="#">Privacy Policy</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/#features">Features</a></li>
+            <li><a href="pricing.html">Pricing</a></li>
+            <li><a href="#">Documentation</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="contact.html">Contact Us</a></li>
+            <li><a href="#">FAQ</a></li>
+            <li><a href="#">Help Center</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h4>Connect</h4>
+          <div class="social-links">
+            <a href="#" class="social-link">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path>
+                <rect x="2" y="9" width="4" height="12"></rect>
+                <circle cx="4" cy="4" r="2"></circle>
+              </svg>
+            </a>
+            <a href="#" class="social-link">
+              <svg width="24" height="24" viewBox="0 0 1200 1227" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path d="M714.163 519.284L1160.89 0H1055.03L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.866L515.491 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.165 687.828L521.697 619.934L144.011 79.6944H306.615L611.412 515.685L658.88 583.579L1055.08 1150.3H892.476L569.165 687.854V687.828Z"/>
+              </svg>
+            </a>
+            <a href="mailto:support@aegisiqstockledger.com" class="social-link">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+            </a>
+          </div>
+          <p class="social-note">Follow us for equity management tips</p>
+        </div>
+      </div>
+
+      <!-- Bottom Row -->
+      <div class="footer-bottom">
+        <div class="footer-legal">
+          <span>© 2026 AegisIQ. All rights reserved.</span>
+          <span class="separator">|</span>
+          <a href="#">Terms of Service</a>
+          <span class="separator">|</span>
+          <a href="mailto:support@aegisiqstockledger.com">support@aegisiqstockledger.com</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+ 
+  <button class="back-to-top" id="backToTop">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+  </button>
+
+  <script src="/assets/js/shared.js"></script>
+  <script src="/assets/js/pricing.js"></script>
+</body>
+</html>

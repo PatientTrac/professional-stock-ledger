@@ -55,7 +55,7 @@ async function handleListUsers(event, params) {
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  if (!requireRole(['SUPER_ADMIN', 'ADMIN'])(user)) {
+  if (!requireRole(['SUPER_ADMIN', 'ENTITY_ADMIN'])(user)) {
     return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
   }
 
@@ -114,7 +114,7 @@ async function handleCreateUser(event) {
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  if (!requireRole(['SUPER_ADMIN', 'ADMIN'])(user)) {
+  if (!requireRole(['SUPER_ADMIN', 'ENTITY_ADMIN'])(user)) {
     return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
   }
 
@@ -125,7 +125,7 @@ async function handleCreateUser(event) {
     return json(400, { success: false, error: 'Email, password, full name, role are required' }, headers);
   }
 
-  const validRoles = ['SUPER_ADMIN', 'ADMIN', 'USER'];
+  const validRoles = ['SUPER_ADMIN', 'ENTITY_ADMIN', 'MANAGER', 'VIEWER'];
   if (!validRoles.includes(role)) {
     return json(400, { success: false, error: 'Invalid role' }, headers);
   }
@@ -167,7 +167,7 @@ async function handleUpdateUser(event) {
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  if (!requireRole(['SUPER_ADMIN', 'ADMIN'])(user)) {
+  if (!requireRole(['SUPER_ADMIN', 'ENTITY_ADMIN'])(user)) {
     return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
   }
 
@@ -239,7 +239,7 @@ async function handleDeleteUser(event, params) {
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  if (!requireRole(['SUPER_ADMIN', 'ADMIN'])(user)) {
+  if (!requireRole(['SUPER_ADMIN', 'ENTITY_ADMIN'])(user)) {
     return json(403, { success: false, error: 'Forbidden: Insufficient permissions' }, headers);
   }
 

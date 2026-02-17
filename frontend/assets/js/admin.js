@@ -13,7 +13,7 @@ const CONFIG = {
   },
   routes: { login: '/login.html', app: '/app.html', admin: '/admin.html' },
   storage: { authToken: 'auth_token', user: 'user' },
-  roles: { SUPER_ADMIN: 'SUPER_ADMIN', ADMIN: 'ADMIN', USER: 'USER' }
+  roles: { SUPER_ADMIN: 'SUPER_ADMIN', ENTITY_ADMIN: 'ENTITY_ADMIN', MANAGER: 'MANAGER', VIEWER: 'VIEWER' }
 };
 
 /* =====================================================
@@ -27,7 +27,7 @@ const Auth = {
   },
   isAuthenticated() { return !!this.getToken() && !!this.getUser(); },
   isSuperAdmin() { const u = this.getUser(); return u?.role === CONFIG.roles.SUPER_ADMIN; },
-  isAdmin() { const u = this.getUser(); return u?.role === CONFIG.roles.SUPER_ADMIN || u?.role === CONFIG.roles.ADMIN; },
+  isAdmin() { const u = this.getUser(); return u?.role === CONFIG.roles.SUPER_ADMIN || u?.role === CONFIG.roles.ENTITY_ADMIN; },
   logout() {
     localStorage.removeItem(CONFIG.storage.authToken);
     localStorage.removeItem(CONFIG.storage.user);
@@ -144,10 +144,17 @@ const UI = {
   });
 },
   setupMobileMenu() {
-    const toggle = document.getElementById('mobileMenuToggle');
-    const menu = document.getElementById('mobileMenu');
-    if (!toggle || !menu) return;
-    toggle.addEventListener('click', () => menu.classList.toggle('hidden'));
+    // Sidebar mobile toggle
+    const mobileToggle = document.getElementById('sidebarMobileToggle');
+    const sidebar = document.getElementById('adminSidebar');
+    if (mobileToggle && sidebar) {
+      mobileToggle.addEventListener('click', () => sidebar.classList.toggle('mobile-open'));
+    }
+    // Sidebar collapse toggle (desktop)
+    const collapseBtn = document.getElementById('sidebarCollapseBtn');
+    if (collapseBtn && sidebar) {
+      collapseBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
+    }
   },
   scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); }
 };
@@ -189,15 +196,26 @@ const AdminApp = {
     if (entitiesTab && Auth.isSuperAdmin()) entitiesTab.style.display = 'flex';
     const superAdminOption = document.getElementById('superAdminOption');
     if (superAdminOption && Auth.isSuperAdmin()) superAdminOption.style.display = 'block';
+    // Hide entity filter bar for non-super-admin users
+    const entityFilterBar = document.getElementById('adminEntityFilterBar');
+    if (entityFilterBar && !Auth.isSuperAdmin()) entityFilterBar.style.display = 'none';
   },
 
   /* ---- TABS ---- */
   switchTab(tabName) {
     this.state.currentTab = tabName;
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+    // Update sidebar active state
+    document.querySelectorAll('.sidebar-item[data-tab]').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tabName}`));
-    const filterBar = document.getElementById('adminEntityFilterBar');
-    if (filterBar) filterBar.style.display = ['shareholders', 'stock-types', 'users'].includes(tabName) ? 'flex' : 'none';
+
+    // Update topbar title
+    const titleMap = { 'shareholders': 'Shareholders', 'stock-types': 'Stock Types', 'users': 'Users', 'entities': 'Entity Settings' };
+    const titleEl = document.getElementById('adminPageTitle');
+    if (titleEl) titleEl.textContent = titleMap[tabName] || 'Admin';
+
+    // Close mobile sidebar on navigation
+    const sidebar = document.getElementById('adminSidebar');
+    if (sidebar) sidebar.classList.remove('mobile-open');
 
     if (tabName === 'shareholders') this.loadShareholders();
     else if (tabName === 'stock-types') this.loadStockTypes();
@@ -294,7 +312,13 @@ const AdminApp = {
         <td class="mono">${UI.escapeHtml(sh.email || '—')}</td>
         <td><span class="type-badge ${(sh.shareholder_type || 'individual').toLowerCase()}">${sh.shareholder_type || 'INDIVIDUAL'}</span></td>
         <td><span class="status-badge ${sh.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${sh.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td><div class="table-actions"><button class="btn-table edit" onclick="AdminApp.editShareholder(${sh.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-table danger" onclick="AdminApp.deleteShareholder(${sh.id}, '${UI.escapeHtml(sh.full_name).replace(/'/g, "\\'")}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></div></td>
+        <td><div class="table-actions">
+          <button class="btn-table edit" onclick="AdminApp.editShareholder(${sh.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <label class="toggle-switch" title="${sh.is_active ? 'Deactivate' : 'Activate'}">
+            <input type="checkbox" ${sh.is_active ? 'checked' : ''} onchange="AdminApp.toggleShareholderStatus(${sh.id}, this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div></td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -324,6 +348,7 @@ const AdminApp = {
     document.getElementById('shareholderCity').value = sh.city || '';
     document.getElementById('shareholderState').value = sh.state || '';
     document.getElementById('shareholderZipCode').value = sh.zip_code || '';
+    document.getElementById('shareholderCountry').value = sh.country || 'US';
     document.getElementById('shareholderType').value = sh.shareholder_type || 'INDIVIDUAL';
     document.getElementById('shareholderTaxId').value = sh.tax_id || '';
     document.getElementById('shareholderActive').checked = sh.is_active;
@@ -349,6 +374,7 @@ const AdminApp = {
       city: document.getElementById('shareholderCity').value || null,
       state: document.getElementById('shareholderState').value || null,
       zip_code: document.getElementById('shareholderZipCode').value || null,
+      country: document.getElementById('shareholderCountry').value || 'US',
       shareholder_type: document.getElementById('shareholderType').value,
       tax_id: document.getElementById('shareholderTaxId').value || null,
       is_active: document.getElementById('shareholderActive').checked,
@@ -370,30 +396,16 @@ const AdminApp = {
     }
   },
 
-  openDeleteShareholderModal(id, name) {
-  document.getElementById('deleteShareholderName').textContent = `"${name}"`;
-
-  const confirmBtn = document.getElementById('confirmDeleteShareholderBtn');
-
-  // Remove old click handlers (important)
-  confirmBtn.onclick = null;
-
-  confirmBtn.onclick = async () => {
+  async toggleShareholderStatus(id, isActive) {
     try {
-      await API.delete(`/shareholders?action=delete&id=${id}`);
-      UI.toast('Shareholder deleted/deactivated', 'success');
-      UI.closeModal('deleteShareholderModal');
+      await API.put('/shareholders?action=update', { id, is_active: isActive });
+      UI.toast(`Shareholder ${isActive ? 'activated' : 'deactivated'}`, 'success');
+			 
       await this.loadShareholders();
     } catch (error) {
-      UI.toast(error.message || 'Failed to delete shareholder', 'error');
+      UI.toast(error.message || 'Failed to update shareholder status', 'error');
+      await this.loadShareholders(); // revert toggle
     }
-  };
-
-  UI.openModal('deleteShareholderModal');
-},
-
-  deleteShareholder(id, name) {
-	this.openDeleteShareholderModal(id, name);
   },
 
   /* ---- STOCK TYPES ---- */
@@ -624,16 +636,25 @@ const AdminApp = {
       container.innerHTML = '<div class="empty-state"><span>No users found.</span></div>';
       return;
     }
+    const roleLabels = { 'SUPER_ADMIN': 'Super Admin', 'ENTITY_ADMIN': 'Entity Admin', 'MANAGER': 'Manager', 'VIEWER': 'Viewer', 'ADMIN': 'Admin', 'USER': 'User' };
     let html = '<table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Entity</th><th>Status</th><th style="width:100px;">Actions</th></tr></thead><tbody>';
+    const currentUserId = this.state.user ? this.state.user.id : null;
     this.state.users.forEach(user => {
       const entity = this.state.entities.find(e => e.id === user.entity_id);
+      const isSelf = String(user.id) === String(currentUserId);
       html += `<tr>
-        <td>${UI.escapeHtml(user.full_name)}</td>
+        <td>${UI.escapeHtml(user.full_name)}${isSelf ? ' <span class="role-badge viewer" style="font-size:10px;padding:2px 6px;">You</span>' : ''}</td>
         <td class="mono">${UI.escapeHtml(user.email)}</td>
-        <td><span class="role-badge ${user.role.toLowerCase()}">${user.role}</span></td>
+        <td><span class="role-badge ${user.role.toLowerCase()}">${roleLabels[user.role] || user.role}</span></td>
         <td>${entity ? UI.escapeHtml(entity.name) : '—'}</td>
         <td><span class="status-badge ${user.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${user.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td><div class="table-actions"><button class="btn-table edit" onclick="AdminApp.editUser(${user.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-table danger" onclick="AdminApp.deleteUser(${user.id}, '${UI.escapeHtml(user.full_name || user.email).replace(/'/g, "\\'")}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></div></td>
+        <td><div class="table-actions">
+          <button class="btn-table edit" onclick="AdminApp.editUser(${user.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <label class="toggle-switch ${isSelf ? 'disabled' : ''}" title="${isSelf ? 'You cannot deactivate yourself' : (user.is_active ? 'Deactivate' : 'Activate')}">
+            <input type="checkbox" ${user.is_active ? 'checked' : ''} ${isSelf ? 'disabled' : ''} onchange="AdminApp.toggleUserStatus(${user.id}, this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div></td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -765,7 +786,13 @@ const AdminApp = {
         <td>${UI.escapeHtml(entity.legal_name || '—')}</td>
         <td class="mono">${UI.escapeHtml(entity.email || '—')}</td>
         <td><span class="status-badge ${entity.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${entity.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td><div class="table-actions"><button class="btn-table edit" onclick="AdminApp.editEntity(${entity.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="btn-table danger" onclick="AdminApp.deleteEntity(${entity.id}, '${UI.escapeHtml(entity.name).replace(/'/g, "\\'")}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></div></td>
+        <td><div class="table-actions">
+          <button class="btn-table edit" onclick="AdminApp.editEntity(${entity.id})" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <label class="toggle-switch" title="${entity.is_active ? 'Deactivate' : 'Activate'}">
+            <input type="checkbox" ${entity.is_active ? 'checked' : ''} onchange="AdminApp.toggleEntityStatus(${entity.id}, this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div></td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -841,49 +868,36 @@ const AdminApp = {
     }
   },
 
-  /* ---- DELETE USER ---- */
-  deleteUser(id, name) {
-    this.openDeleteUserModal(id, name);
+  /* ---- TOGGLE USER STATUS ---- */
+  async toggleUserStatus(id, isActive) {
+    // Prevent self-deactivation
+    if (String(id) === String(this.state.user?.id)) {
+      UI.toast('You cannot deactivate yourself', 'warning');
+      await this.loadUsers();
+      return;
+    }
+    try {
+      await API.put('/users?action=update', { id, is_active: isActive });
+      UI.toast(`User ${isActive ? 'activated' : 'deactivated'}`, 'success');
+      await this.loadUsers();
+    } catch (error) {
+      UI.toast(error.message || 'Failed to update user status', 'error');
+      await this.loadUsers();
+    }
   },
 
-  openDeleteUserModal(id, name) {
-    document.getElementById('deleteUserName').textContent = `"${name}"`;
-    const confirmBtn = document.getElementById('confirmDeleteUserBtn');
-    confirmBtn.onclick = null;
-    confirmBtn.onclick = async () => {
-      try {
-        await API.delete(`/users?action=delete&id=${id}`);
-        UI.toast('User deleted/deactivated', 'success');
-        UI.closeModal('deleteUserModal');
-        await this.loadUsers();
-      } catch (error) {
-        UI.toast(error.message || 'Failed to delete user', 'error');
-      }
-    };
-    UI.openModal('deleteUserModal');
-  },
-
-  /* ---- DELETE ENTITY ---- */
-  deleteEntity(id, name) {
-    this.openDeleteEntityModal(id, name);
-  },
-
-  openDeleteEntityModal(id, name) {
-    document.getElementById('deleteEntityName').textContent = `"${name}"`;
-    const confirmBtn = document.getElementById('confirmDeleteEntityBtn');
-    confirmBtn.onclick = null;
-    confirmBtn.onclick = async () => {
-      try {
-        await API.delete(`/entities?action=delete&id=${id}`);
-        UI.toast('Entity deleted/deactivated', 'success');
-        UI.closeModal('deleteEntityModal');
-        await this.loadEntities();
-        this.renderEntitiesTable();
-      } catch (error) {
-        UI.toast(error.message || 'Failed to delete entity', 'error');
-      }
-    };
-    UI.openModal('deleteEntityModal');
+  /* ---- TOGGLE ENTITY STATUS ---- */
+  async toggleEntityStatus(id, isActive) {
+    try {
+      await API.put('/entities?action=update', { entityId: id, is_active: isActive });
+      UI.toast(`Entity ${isActive ? 'activated' : 'deactivated'}`, 'success');
+      await this.loadEntities();
+      this.renderEntitiesTable();
+    } catch (error) {
+      UI.toast(error.message || 'Failed to update entity status', 'error');
+      await this.loadEntities();
+      this.renderEntitiesTable();
+    }
   }
 };
 

@@ -26,17 +26,16 @@ exports.handler = async (event) => {
   try {
     if (event.httpMethod === 'GET') {
       if (action === 'ledger') return await handleLedger(event, params);
-	  if (action === 'shareholder-holdings') return await handleShareholderHoldings(event, params);																							   
+      if (action === 'shareholder-holdings') return await handleShareholderHoldings(event, params);
       if (action === 'list-book-entries') return await handleListBookEntries(event, params);
-      if (action === 'shareholder-holdings') return await handleGetShareholderHoldings(event, params);
       return json(400, { success:false, error:'Invalid action' });
     }
-  return json(201, { success:true, transaction: result.rows[0] }, headers);
 
     if (event.httpMethod === 'POST') {
       if (action === 'issue-shares') return await handleIssue(event);
       if (action === 'transfer-shares') return await handleTransfer(event);
       if (action === 'cancel-shares') return await handleCancel(event);
+      if (action === 'execute-split') return await handleSplit(event);
       return json(400, { success:false, error:'Invalid action' });
     }
 
@@ -473,55 +472,163 @@ async function handleCancel(event) {
 }
 
 /* =====================================================
-   GET: Get shareholder holdings for a specific stock type/series
-   Used to populate transfer/cancel modals with available shares
+   POST: Execute Stock Split (Forward or Reverse)
+   Appends FORWARD_SPLIT or REVERSE_SPLIT adjustment 
+   transactions per holder – immutable, audit-safe.
 ===================================================== */
-async function handleGetShareholderHoldings(event, params) {
+async function handleSplit(event) {
   const auth = await authMiddleware(event);
   if (auth.statusCode) return auth;
   const { user, headers } = auth;
 
-  const { shareholder_id, entity_id } = params;
-  
-  if (!shareholder_id) {
-    return json(400, { success: false, error: 'shareholder_id is required' }, headers);
+  const canSplit = requireRole(['SUPER_ADMIN', 'ENTITY_ADMIN'])(user);
+  if (!canSplit) return json(403, { success:false, error:'Forbidden' }, headers);
+
+  const body = parseBody(event);
+  const {
+    entity_stock_type_id,
+    entity_stock_series_id,
+    old_shares,
+    new_shares,
+    split_direction, // 'FORWARD' or 'REVERSE'
+    effective_date,
+    rounding,        // 'ROUND_DOWN', 'ROUND_UP', 'ROUND_NEAREST'
+    notes,
+  } = body;
+
+  if (!entity_stock_type_id || !old_shares || !new_shares || !split_direction || !effective_date) {
+    return json(400, { success:false, error:'Missing required fields' }, headers);
   }
 
-  const targetEntityId = user.role === 'SUPER_ADMIN' && entity_id ? entity_id : user.entity_id;
+  if (!['FORWARD', 'REVERSE'].includes(split_direction)) {
+    return json(400, { success:false, error:'split_direction must be FORWARD or REVERSE' }, headers);
+  }
 
-  // Get all stock types and series with positive balances for this shareholder
-  const result = await query(`
-    WITH holdings AS (
-      SELECT 
-        st.entity_stock_type_id,
-        st.entity_stock_series_id,
-        COALESCE(SUM(st.shares), 0) AS current_sharess
-      FROM share_transactions st
-      WHERE st.entity_id = $1 AND st.shareholder_id = $2
-      GROUP BY st.entity_stock_type_id, st.entity_stock_series_id
-      HAVING COALESCE(SUM(
-        CASE 
-          WHEN st.transaction_type = 'ISSUANCE' THEN st.shares
-          WHEN st.transaction_type = 'TRANSFER' AND st.to_shareholder_id = $2 THEN st.shares
-          WHEN st.transaction_type = 'TRANSFER' AND st.from_shareholder_id = $2 THEN -st.shares
-          WHEN st.transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN st.shares
-          ELSE 0
-        END
-      ), 0) > 0
-    )
+  const oldNum = parseInt(old_shares);
+  const newNum = parseInt(new_shares);
+  if (oldNum < 1 || newNum < 1) {
+    return json(400, { success:false, error:'Split ratio values must be positive integers' }, headers);
+  }
+
+  if (split_direction === 'REVERSE' && oldNum <= newNum) {
+    return json(400, { success:false, error:'For reverse split, old shares must exceed new shares' }, headers);
+  }
+  if (split_direction === 'FORWARD' && newNum <= oldNum) {
+    return json(400, { success:false, error:'For forward split, new shares must exceed old shares' }, headers);
+  }
+
+  const entityId = user.entity_id;
+  const txType = split_direction === 'FORWARD' ? 'FORWARD_SPLIT' : 'REVERSE_SPLIT';
+  const ratio = newNum / oldNum; // e.g. reverse 10:1 → 0.1, forward 1:2 → 2.0
+  const roundMode = rounding || 'ROUND_DOWN';
+
+  // 1️⃣ Prevent duplicate split on the same date
+  const dupCheck = await query(`
+    SELECT 1 FROM share_transactions
+    WHERE entity_id = $1
+      AND entity_stock_type_id = $2
+      AND transaction_type IN ('FORWARD_SPLIT','REVERSE_SPLIT')
+      AND transaction_date = $3
+    LIMIT 1
+  `, [entityId, entity_stock_type_id, effective_date]);
+
+  if (dupCheck.rows.length > 0) {
+    return json(400, { success:false, error:'A split has already been executed for this stock type on this date. Choose a different date or verify the existing split.' }, headers);
+  }
+
+  // Get all shareholders with positive holdings for this stock type/series
+  const holdersResult = await query(`
     SELECT 
-      h.entity_stock_type_id,
-      h.entity_stock_series_id,
-      h.current_shares,
-      est.stock_type,
-      est.display_name,
-      est.supports_series,
-      ess.series
-    FROM holdings h
-    JOIN entity_stock_types est ON est.id = h.entity_stock_type_id
-    LEFT JOIN entity_stock_series ess ON ess.id = h.entity_stock_series_id
-    ORDER BY est.display_name, ess.series
-  `, [targetEntityId, shareholder_id]);
+      st.shareholder_id,
+      COALESCE(SUM(st.shares), 0) AS current_shares
+    FROM share_transactions st
+    WHERE st.entity_id = $1
+      AND st.entity_stock_type_id = $2
+      ${entity_stock_series_id ? 'AND st.entity_stock_series_id = $3' : 'AND ($3::bigint IS NULL OR st.entity_stock_series_id IS NULL)'}
+    GROUP BY st.shareholder_id
+    HAVING COALESCE(SUM(st.shares), 0) > 0
+  `, [entityId, entity_stock_type_id, entity_stock_series_id || null]);
 
-  return json(200, { success: true, holdings: result.rows }, headers);
+  if (!holdersResult.rows.length) {
+    return json(400, { success:false, error:'No shareholders hold shares in this stock type/series' }, headers);
+  }
+
+  // 3️⃣ Snapshot: compute total outstanding before split
+  const totalOutstandingBefore = holdersResult.rows.reduce(
+    (sum, h) => sum + parseFloat(h.current_shares), 0
+  );
+
+  const splitNote = `${txType} ${oldNum}:${newNum} — ${notes || ''}`.trim();
+  const adjustments = [];
+
+  // 2️⃣ Wrap all inserts in a DB transaction for atomicity
+  await query('BEGIN');
+  try {
+    for (const holder of holdersResult.rows) {
+      const currentShares = parseFloat(holder.current_shares);
+      let newSharesCount;
+
+      if (roundMode === 'ROUND_UP') {
+        newSharesCount = Math.ceil(currentShares * ratio);
+      } else if (roundMode === 'ROUND_NEAREST') {
+        newSharesCount = Math.round(currentShares * ratio);
+      } else {
+        newSharesCount = Math.floor(currentShares * ratio);
+      }
+
+      const adjustment = newSharesCount - currentShares;
+      if (adjustment === 0) continue;
+
+      const insertResult = await query(`
+        INSERT INTO share_transactions (
+          entity_id, shareholder_id, transaction_type, transaction_date,
+          entity_stock_type_id, entity_stock_series_id, shares, notes, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        RETURNING *
+      `, [
+        entityId,
+        holder.shareholder_id,
+        txType,
+        effective_date,
+        entity_stock_type_id,
+        entity_stock_series_id || null,
+        adjustment,
+        splitNote,
+        user.id,
+      ]);
+
+      adjustments.push({
+									  
+        shareholder_id: holder.shareholder_id,
+        pre_split_shares: currentShares,
+        post_split_shares: newSharesCount,
+        adjustment,
+        transaction: insertResult.rows[0],
+      });
+    }
+
+    await query('COMMIT');
+  } catch (txError) {
+    await query('ROLLBACK');
+    throw txError;	   
+  }
+
+  // 3️⃣ Snapshot: compute total outstanding after split
+  const totalOutstandingAfter = adjustments.reduce(
+    (sum, a) => sum + a.post_split_shares, 0
+  );
+
+  return json(201, {
+    success: true,
+    split: {
+      type: txType,
+      ratio: `${oldNum}:${newNum}`,
+      rounding: roundMode,
+      effective_date,
+      affected_holders: adjustments.length,
+      total_outstanding_before: totalOutstandingBefore,
+      total_outstanding_after: totalOutstandingAfter,
+      adjustments,
+    }
+  }, headers);
 }
