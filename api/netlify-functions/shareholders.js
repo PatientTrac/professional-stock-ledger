@@ -4,6 +4,7 @@
  */
 const { query } = require('./utils/db');
 const { authMiddleware, requireRole, enforceEntityScope } = require('./middleware/auth');
+const { logAudit, getClientIp } = require('./utils/auditLog');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
@@ -214,6 +215,7 @@ async function handleCreateShareholder(event) {
   try {
     // Generate external_id as EntityID_ShareholderID after insert
     // We'll set it after getting the shareholder ID from RETURNING
+
     const result = await query(
       `
       INSERT INTO shareholders (
@@ -248,6 +250,14 @@ async function handleCreateShareholder(event) {
       [generatedExternalId, shareholder.id]
     );
     shareholder = updateResult.rows[0];
+
+    await logAudit({
+      user_id: user.id, user_email: user.email, user_role: user.role,
+      entity_id: targetEntityId, action: 'CREATE_SHAREHOLDER',
+      resource_type: 'SHAREHOLDER', resource_id: shareholder.id,
+      details: { full_name, shareholder_type: shareholder_type || 'INDIVIDUAL', external_id: generatedExternalId },
+      ip_address: getClientIp(event),
+    });
 
     return json(201, { success: true, shareholder }, headers);
   } catch (e) {
@@ -321,7 +331,14 @@ async function handleUpdateShareholder(event) {
 
     const result = await query(q, paramsArr);
     const updated = result.rows[0];
-									 
+
+    await logAudit({
+      user_id: user.id, user_email: user.email, user_role: user.role,
+      entity_id: shareholder.entity_id, action: 'UPDATE_SHAREHOLDER',
+      resource_type: 'SHAREHOLDER', resource_id: id,
+      details: { updated_fields: keys },
+      ip_address: getClientIp(event),
+    });
 
     return json(200, { success: true, shareholder: updated }, headers);
   } catch (e) {
@@ -356,16 +373,29 @@ async function handleDeleteShareholder(event, params) {
     );
     
     if (parseInt(txCheck.rows[0].cnt) > 0) {
-      // Soft delete only if transactions exist
+											   
       await query(
         'UPDATE shareholders SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
         [id]
       );
+      await logAudit({
+        user_id: user.id, user_email: user.email, user_role: user.role,
+        entity_id: user.entity_id, action: 'DEACTIVATE_SHAREHOLDER',
+        resource_type: 'SHAREHOLDER', resource_id: id,
+        details: { reason: 'has_transactions' },
+        ip_address: getClientIp(event),
+      });
       return json(200, { success: true, message: 'Shareholder deactivated (has transactions)' }, headers);
     }
 
-    // Hard delete if no transactions
+									 
     await query('DELETE FROM shareholders WHERE id = $1', [id]);
+    await logAudit({
+      user_id: user.id, user_email: user.email, user_role: user.role,
+      entity_id: user.entity_id, action: 'DELETE_SHAREHOLDER',
+      resource_type: 'SHAREHOLDER', resource_id: id,
+      ip_address: getClientIp(event),
+    });
     return json(200, { success: true, message: 'Shareholder deleted' }, headers);
   } catch (e) {
     console.error('Delete shareholder error:', e);

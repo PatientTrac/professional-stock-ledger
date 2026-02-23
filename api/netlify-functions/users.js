@@ -5,6 +5,7 @@
 const bcrypt = require('bcryptjs');
 const { query } = require('./utils/db');
 const { authMiddleware, requireRole, enforceEntityScope } = require('./middleware/auth');
+const { logAudit, getClientIp } = require('./utils/auditLog');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
@@ -224,6 +225,15 @@ async function handleUpdateUser(event) {
     `;
 
     const result = await query(q, paramsArr);
+
+    await logAudit({
+      user_id: user.id, user_email: user.email, user_role: user.role,
+      entity_id: user.entity_id, action: 'UPDATE_USER',
+      resource_type: 'USER', resource_id: id,
+      details: { updated_fields: keys, password_changed: !!password },
+      ip_address: getClientIp(event),
+    });
+
     return json(200, { success: true, user: result.rows[0] }, headers);
   } catch (e) {
     console.error('Update user error:', e);
@@ -262,6 +272,14 @@ async function handleDeleteUser(event, params) {
 
     // Deactivate instead of hard delete
     await query('UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+
+    await logAudit({
+      user_id: user.id, user_email: user.email, user_role: user.role,
+      entity_id: user.entity_id, action: 'DEACTIVATE_USER',
+      resource_type: 'USER', resource_id: id,
+      ip_address: getClientIp(event),
+    });
+
     return json(200, { success: true, message: 'User deactivated' }, headers);
   } catch (e) {
     console.error('Delete user error:', e);

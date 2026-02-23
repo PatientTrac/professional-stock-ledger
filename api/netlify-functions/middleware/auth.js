@@ -52,7 +52,7 @@ async function authenticateUser(token) {
     }
 }
 
-function generateToken(user) {
+function generateToken(user, expiresIn = '8h') {
     return jwt.sign(
         { 
             userId: user.id, 
@@ -61,7 +61,7 @@ function generateToken(user) {
             entityId: user.entity_id 
         },
         JWT_SECRET,
-        { expiresIn: '8h' }
+        { expiresIn }
     );
 }
 

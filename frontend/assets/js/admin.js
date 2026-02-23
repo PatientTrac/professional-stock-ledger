@@ -441,15 +441,21 @@ const AdminApp = {
       container.innerHTML = '<div class="empty-state"><span>No stock types found. Add your first stock type.</span></div>';
       return;
     }
-    let html = '<table class="data-table"><thead><tr><th style="width:40px;"></th><th>Stock Type</th><th>Display Name</th><th>Supports Series</th><th>Status</th><th style="width:100px;">Actions</th></tr></thead><tbody>';
+    const fmt = (v) => v !== null && v !== undefined ? Number(v).toLocaleString() : '—';
+    const fmtDec = (v) => v !== null && v !== undefined ? parseFloat(v).toFixed(4) : '—';
+    let html = '<table class="data-table"><thead><tr><th style="width:40px;"></th><th>Stock Type</th><th>Display Name</th><th>Par Value</th><th>Authorized</th><th>Voting</th><th>Series?</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead><tbody>';
     this.state.stockTypes.forEach(st => {
       const numId = Number(st.id);
       const isExpanded = this.state.expandedStockTypes.has(numId);
       const hasSeries = st.supports_series && st.series && st.series.length > 0;
+      const locked = st.is_governance_locked;
       html += `<tr class="stock-type-row ${isExpanded ? 'expanded' : ''}" ${st.supports_series ? `onclick="AdminApp.toggleStockTypeRow(${numId})"` : ''} style="cursor:${st.supports_series ? 'pointer' : 'default'}">
         <td>${st.supports_series ? `<svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition:transform 0.2s;${isExpanded ? 'transform:rotate(90deg)' : ''}"><polyline points="9 18 15 12 9 6"/></svg>` : ''}</td>
-        <td><span class="mono">${UI.escapeHtml(st.stock_type)}</span></td>
+        <td><span class="mono">${UI.escapeHtml(st.stock_type)}</span>${locked ? ' <span style="color:#e74c3c;font-size:11px;" title="Governance locked - shares issued">🔒</span>' : ''}</td>
         <td>${UI.escapeHtml(st.display_name)}</td>
+        <td class="mono">${st.par_value !== null && st.par_value !== undefined ? '$' + fmtDec(st.par_value) : '—'}</td>
+        <td class="mono">${fmt(st.authorized_shares)}</td>
+        <td>${st.has_voting_rights === false ? '<span class="text-muted">No</span>' : 'Yes'}</td>
         <td>${st.supports_series ? `<span class="supports-series-badge">Yes ${hasSeries ? '(' + st.series.length + ')' : ''}</span>` : '<span class="text-muted">No</span>'}</td>
         <td><span class="status-badge ${st.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${st.is_active ? 'Active' : 'Inactive'}</span></td>
         <td onclick="event.stopPropagation()"><div class="table-actions">
@@ -458,12 +464,13 @@ const AdminApp = {
         </div></td>
       </tr>`;
       if (st.supports_series) {
-        html += `<tr class="series-detail-row ${isExpanded ? 'visible' : ''}" id="series-row-${numId}" style="display:${isExpanded ? 'table-row' : 'none'}"><td colspan="6"><div class="series-detail-content"><div class="series-detail-header"><h4>Series for ${UI.escapeHtml(st.display_name)}</h4></div>`;
+        html += `<tr class="series-detail-row ${isExpanded ? 'visible' : ''}" id="series-row-${numId}" style="display:${isExpanded ? 'table-row' : 'none'}"><td colspan="9"><div class="series-detail-content"><div class="series-detail-header"><h4>Series for ${UI.escapeHtml(st.display_name)}</h4></div>`;
         if (st.series && st.series.length > 0) {
-          html += '<table class="data-table series-table" style="margin:0;"><thead><tr><th>Series Name</th><th>Status</th><th style="width:60px;">Actions</th></tr></thead><tbody>';
+          html += '<table class="data-table series-table" style="margin:0;"><thead><tr><th>Series Name</th><th>Authorized Shares</th><th>Status</th><th style="width:60px;">Actions</th></tr></thead><tbody>';
           st.series.forEach(s => {
             html += `<tr class="${s.is_active ? '' : 'inactive-row'}">
               <td>Series ${UI.escapeHtml(s.series)}</td>
+              <td class="mono">${s.authorized_shares !== null && s.authorized_shares !== undefined ? fmt(s.authorized_shares) : '—'}</td>
               <td><span class="status-badge ${s.is_active ? 'active' : 'inactive'}"><span class="dot"></span>${s.is_active ? 'Active' : 'Inactive'}</span></td>
               <td><div class="table-actions"><button class="btn-table edit" onclick="event.stopPropagation(); AdminApp.editSeries(${s.id}, ${numId})" title="Edit Series"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></td>
             </tr>`;
@@ -516,7 +523,36 @@ const AdminApp = {
     codeSelect.value = (st.stock_type || '').toUpperCase();
     codeSelect.disabled = true;
     document.getElementById('stockTypeDisplayName').value = st.display_name;
+    document.getElementById('stockTypeParValue').value = st.par_value !== null && st.par_value !== undefined ? st.par_value : '';
+    document.getElementById('stockTypeAuthorizedShares').value = st.authorized_shares !== null && st.authorized_shares !== undefined ? st.authorized_shares : '';
+    document.getElementById('stockTypeDividendRate').value = st.dividend_rate !== null && st.dividend_rate !== undefined ? st.dividend_rate : '';
+    document.getElementById('stockTypeLiquidationPref').value = st.liquidation_preference || '';
+    document.getElementById('stockTypeVotingRights').checked = st.has_voting_rights !== false;
     document.getElementById('stockTypeActive').checked = st.is_active;
+
+    // Governance lock handling
+    const isLocked = st.is_governance_locked;
+    const lockedBadge = document.getElementById('stockTypeLockedBadge');
+    const lockNotice = document.getElementById('stockTypeLockNotice');
+    if (isLocked) {
+      lockedBadge.classList.remove('hidden');
+      lockNotice.classList.remove('hidden');
+    } else {
+      lockedBadge.classList.add('hidden');
+      lockNotice.classList.add('hidden');
+    }
+    // Disable governance fields if locked
+    ['stockTypeParValue', 'stockTypeDividendRate', 'stockTypeLiquidationPref', 'stockTypeVotingRights'].forEach(fId => {
+      const el = document.getElementById(fId);
+      if (el) el.disabled = isLocked;
+    });
+    document.getElementById('stockTypeAuthorizedShares').disabled = false;
+    if (isLocked) {
+      document.getElementById('stockTypeAuthorizedShares').min = st.authorized_shares || 0;
+    } else {
+      document.getElementById('stockTypeAuthorizedShares').min = 0;
+    }
+
     this.state.isSubmitting = false;
     UI.openModal('stockTypeModal');
   },
@@ -525,19 +561,24 @@ const AdminApp = {
     event.preventDefault();
     if (this.state.isSubmitting) return;
     this.state.isSubmitting = true;
-    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const submitBtn = document.getElementById('stockTypeSubmitBtn');
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving...'; }
 
     const id = document.getElementById('stockTypeId').value;
     const isEdit = !!id;
     const codeSelect = document.getElementById('stockTypeCode');
-    // Re-enable temporarily so value is accessible
+												   
     const wasDisabled = codeSelect.disabled;
     codeSelect.disabled = false;
     const payload = {
       entity_id: this.state.selectedEntityId,
       stock_type: codeSelect.value,
       display_name: document.getElementById('stockTypeDisplayName').value,
+      par_value: document.getElementById('stockTypeParValue').value || null,
+      authorized_shares: document.getElementById('stockTypeAuthorizedShares').value || null,
+      dividend_rate: document.getElementById('stockTypeDividendRate').value || null,
+      liquidation_preference: document.getElementById('stockTypeLiquidationPref').value || null,
+      has_voting_rights: document.getElementById('stockTypeVotingRights').checked,
       is_active: document.getElementById('stockTypeActive').checked
     };
     if (isEdit) payload.id = id;
@@ -578,7 +619,7 @@ const AdminApp = {
     document.getElementById('seriesId').value = series.id;
     document.getElementById('seriesStockTypeId').value = stockTypeId;
     document.getElementById('seriesName').value = series.series;
-    document.getElementById('seriesActive').checked = series.is_active;
+    document.getElementById('seriesAuthorizedShares').value = series.authorized_shares !== null && series.authorized_shares !== undefined ? series.authorized_shares : '';
     this.state.isSubmitting = false;
     UI.openModal('seriesModal');
   },
@@ -595,6 +636,7 @@ const AdminApp = {
     const payload = {
       entity_stock_type_id: document.getElementById('seriesStockTypeId').value,
       series: document.getElementById('seriesName').value,
+      authorized_shares: document.getElementById('seriesAuthorizedShares').value || null,
       is_active: document.getElementById('seriesActive').checked
     };
     if (isEdit) payload.id = id;

@@ -1,5 +1,6 @@
 const { query } = require('./utils/db');
 const { authMiddleware, requireRole } = require('./middleware/auth');
+const { logAudit, getClientIp } = require('./utils/auditLog');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
@@ -107,6 +108,14 @@ async function handleCreateEntity(event) {
       ]
     );
 
+    await logAudit({
+      user_id: user.id, user_email: user.email, user_role: user.role,
+      entity_id: result.rows[0].id, action: 'CREATE_ENTITY',
+      resource_type: 'ENTITY', resource_id: result.rows[0].id,
+      details: { name, legal_name: legal_name || name },
+      ip_address: getClientIp(event),
+    });
+
     return json(201, { success:true, entity: result.rows[0] }, headers);
   } catch (e) {
     console.error('Create entity error:', e);
@@ -137,8 +146,8 @@ async function handleListEntities(event, params) {
     const qParams = [];
     let i = 0;
 
-    // Non-super admins only see their own entity
-    if (user.role !== 'SUPER_ADMIN') {
+  // Non-super admins only see their own entity
+    if (user.role !== 'SUPER_ADMIN' && user.role !== 'ENTITY_ADMIN') {
       i++;
       q += ` AND id = $${i}`;
       qParams.push(user.entity_id);
@@ -171,7 +180,7 @@ async function handleGetEntity(event, params) {
   if (!entityId) return json(400, { success:false, error:'Entity ID is required' }, headers);
 
   // Non-super admins can only access their entity
-  if (user.role !== 'SUPER_ADMIN' && String(user.entity_id) !== String(entityId)) {
+  if (user.role !== 'SUPER_ADMIN' && user.role !== 'ENTITY_ADMIN' && String(user.entity_id) !== String(entityId)) {
     return json(403, { success:false, error:'Forbidden: Cannot access this entity' }, headers);
   }
 
@@ -247,6 +256,15 @@ async function handleUpdateEntity(event) {
     `;
 
     const result = await query(q, paramsArr);
+
+    await logAudit({
+      user_id: user.id, user_email: user.email, user_role: user.role,
+      entity_id: parseInt(entityId), action: 'UPDATE_ENTITY',
+      resource_type: 'ENTITY', resource_id: entityId,
+      details: { updated_fields: keys },
+      ip_address: getClientIp(event),
+    });
+
     return json(200, { success:true, entity: result.rows[0] }, headers);
   } catch (e) {
     console.error('Update entity error:', e);
@@ -277,11 +295,13 @@ async function handleDeleteEntity(event, params) {
     const users = await query('SELECT id FROM users WHERE entity_id = $1 AND is_active = TRUE LIMIT 1', [id]);
     if (users.rows.length) {
       await query('UPDATE entities SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+      await logAudit({ user_id: user.id, user_email: user.email, user_role: user.role, entity_id: parseInt(id), action: 'DEACTIVATE_ENTITY', resource_type: 'ENTITY', resource_id: id, details: { reason: 'has_active_users' }, ip_address: getClientIp(event) });
       return json(200, { success:true, message:'Entity deactivated (has active users)' }, headers);
     }
 
-    // No active users - deactivate (safe approach)
+												   
     await query('UPDATE entities SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+    await logAudit({ user_id: user.id, user_email: user.email, user_role: user.role, entity_id: parseInt(id), action: 'DEACTIVATE_ENTITY', resource_type: 'ENTITY', resource_id: id, ip_address: getClientIp(event) });
     return json(200, { success:true, message:'Entity deactivated' }, headers);
   } catch (e) {
     console.error('Delete entity error:', e);

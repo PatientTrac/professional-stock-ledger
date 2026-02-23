@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { query } = require('./utils/db');
 const { generateToken, authMiddleware, requireRole } = require('./middleware/auth');
+const { sendEmail, buildTempPasswordEmail, buildForgotPasswordEmail, generateTempPassword } = require('./utils/email');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
@@ -22,7 +23,7 @@ exports.handler = async (event) => {
 
   console.log('AUTH:', { method: event.httpMethod, action });
 
-  // Only POST supported for this simplified auth.js
+													
   if (event.httpMethod !== 'POST') {
     return json(405, { success:false, error:'Method not allowed' });
   }
@@ -30,9 +31,10 @@ exports.handler = async (event) => {
   try {
     if (action === 'login') return await handleLogin(body);
     if (action === 'register') return await handleRegister(body);
+    if (action === 'forgot-password') return await handleForgotPassword(body);
     if (action === 'logout') return json(200, { success:true, message:'Logged out' });
 
-    // ✅ admin-only
+					 
     if (action === 'create-user') return await handleCreateUser(event, body);
 
     return json(400, { success:false, error:'Invalid action or method' });
@@ -43,7 +45,7 @@ exports.handler = async (event) => {
 };
 
 async function handleLogin(body) {
-  const { email, password } = body;
+  const { email, password, rememberMe } = body;
   if (!email || !password) return json(400, { success:false, error:'Email and password are required' });
 
   const result = await query(`
@@ -61,7 +63,9 @@ async function handleLogin(body) {
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return json(401, { success:false, error:'Invalid email or password' });
 
-  const token = generateToken(user);
+  // Token expiry: 7 days if rememberMe, else 30 minutes
+  const expiresIn = rememberMe ? '7d' : '30m';
+  const token = generateToken(user, expiresIn);
 
   return json(200, {
     success: true,
@@ -78,9 +82,9 @@ async function handleLogin(body) {
 }
 
 async function handleRegister(body) {
-  const { email, password, full_name } = body;
-  if (!email || !password || !full_name) {
-    return json(400, { success:false, error:'email, password, full_name are required' });
+  const { email, full_name } = body;
+  if (!email || !full_name) {
+    return json(400, { success:false, error:'email and full_name are required' });
   }
 
   const existing = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
@@ -95,7 +99,9 @@ async function handleRegister(body) {
   if (!ent.rows.length) return json(500, { success:false, error:'DEFAULT_ENTITY_ID does not exist in entities table' });
   if (ent.rows[0].is_active === false) return json(403, { success:false, error:'Default entity is inactive' });
 
-  const hashed = await bcrypt.hash(password, 10);
+  // Generate temporary password
+  const tempPassword = generateTempPassword();
+  const hashed = await bcrypt.hash(tempPassword, 10);
 
   const result = await query(`
     INSERT INTO users (entity_id, email, password_hash, full_name, role, is_active)
@@ -103,21 +109,68 @@ async function handleRegister(body) {
     RETURNING id, email, full_name, role, entity_id
   `, [defaultEntityId, email.toLowerCase(), hashed, full_name, 'VIEWER']);
 
-  const newUser = result.rows[0];
-  const token = generateToken(newUser);
+  // Send temp password email
+  try {
+    const emailContent = buildTempPasswordEmail(full_name, tempPassword);
+    await sendEmail({ to: email.toLowerCase(), ...emailContent });
+  } catch (emailErr) {
+    console.error('Failed to send welcome email:', emailErr);
+    // User created but email failed - still return success with warning
+    return json(201, { 
+      success: true, 
+      message: 'Account created but email could not be sent. Please contact support for your password.',
+      user: result.rows[0] 
+    });
+  }
 
-  return json(201, { success: true, token, user: newUser });
+  return json(201, { 
+    success: true, 
+    message: 'Account created! A temporary password has been sent to your email.',
+    user: result.rows[0] 
+  });
+}
+
+async function handleForgotPassword(body) {
+  const { email } = body;
+  if (!email) return json(400, { success:false, error:'Email is required' });
+
+  const result = await query(`
+    SELECT id, email, full_name FROM users WHERE email = $1 AND is_active = TRUE
+  `, [email.toLowerCase()]);
+
+  // Always return success to avoid email enumeration
+  if (result.rows.length === 0) {
+    return json(200, { success: true, message: 'If an account exists with that email, a new temporary password has been sent.' });
+  }
+
+  const user = result.rows[0];
+  const tempPassword = generateTempPassword();
+  const hashed = await bcrypt.hash(tempPassword, 10);
+
+  // Update password in DB
+  await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashed, user.id]);
+
+  // Send email
+  try {
+    const emailContent = buildForgotPasswordEmail(user.full_name, tempPassword);
+    await sendEmail({ to: user.email, ...emailContent });
+  } catch (emailErr) {
+    console.error('Failed to send reset email:', emailErr);
+    return json(500, { success:false, error:'Failed to send reset email. Please try again later.' });
+  }
+
+  return json(200, { success: true, message: 'If an account exists with that email, a new temporary password has been sent.' });
 }
 
 // ✅ Admin-only user creation
 async function handleCreateUser(event, body) {
-  // authMiddleware should return { user, headers } OR an error response
+																		
   const auth = await authMiddleware(event);
-  if (auth.statusCode) return auth; // already a formatted response
+  if (auth.statusCode) return auth;
 
   const { user, headers } = auth;
 
-  // Only SUPER_ADMIN or ADMIN
+							  
   const allowed = requireRole(['SUPER_ADMIN', 'ADMIN'])(user);
   if (!allowed) return json(403, { success:false, error:'Forbidden: Insufficient permissions' }, headers);
 
@@ -132,10 +185,10 @@ async function handleCreateUser(event, body) {
     return json(400, { success:false, error:'Invalid role' }, headers);
   }
 
-  // Determine target entity
+							
   let targetEntityId = entity_id;
 
-  // SUPER_ADMIN can specify entity_id, ADMIN is forced to own entity
+																	 
   if (user.role !== 'SUPER_ADMIN') {
     targetEntityId = user.entity_id;
   } else {

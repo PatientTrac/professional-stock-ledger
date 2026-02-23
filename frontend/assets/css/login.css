@@ -20,7 +20,7 @@
   transform: translateX(-50%);
   width: 800px;
   height: 600px;
-  background: radial-gradient(circle, hsla(var(--gold), 0.08) 0%, transparent 60%);
+  background: radial-gradient(circle, hsla(38, 51%, 62%, 0.08) 0%, transparent 60%);
   pointer-events: none;
 }
 
@@ -182,14 +182,14 @@
   width: 1.125rem;
   height: 1.125rem;
   min-width: 1.125rem;
-  border: 2px solid hsla(var(--border), 0.8);
+  border: 2px solid var(--gold);
   border-radius: 0.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
   margin-top: 0.1rem;
-  background-color: hsl(var(--background)); /* Add background */
+  background-color: transparent;
 }
 
 .checkbox-label input[type="checkbox"]:checked + .checkmark {

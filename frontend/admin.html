@@ -265,41 +265,77 @@
 
 <!-- Create/Edit Stock Type Modal -->
 <div class="modal-overlay hidden" id="stockTypeModal">
-  <div class="modal">
+  <div class="modal modal-lg">
     <div class="modal-header">
       <h3 class="modal-title" id="stockTypeModalTitle">Add Stock Type</h3>
-      <button class="modal-close" onclick="UI.closeModal('stockTypeModal')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="governance-locked-badge hidden" id="stockTypeLockedBadge" style="background:#e74c3c;color:#fff;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;">🔒 Governance Locked</span>
+        <button class="modal-close" onclick="UI.closeModal('stockTypeModal')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
     </div>
     <div class="modal-body">
+      <div class="governance-lock-notice hidden" id="stockTypeLockNotice" style="background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#e74c3c;">
+        ⚠️ This stock class cannot be fully modified because shares have already been issued. Only display name and active status can be changed. Authorized shares can only be increased.
+      </div>
       <form id="stockTypeForm" onsubmit="AdminApp.handleStockTypeSubmit(event)">
         <input type="hidden" id="stockTypeId" />
-        <div class="form-group">
-          <label for="stockTypeCode">Stock Type *</label>
-          <select id="stockTypeCode" required>
-            <option value="">Select type...</option>
-            <option value="COMMON">Common</option>
-            <option value="PREFERRED">Preferred</option>
-            <option value="WARRANT">Warrant</option>
-          </select>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stockTypeCode">Stock Type *</label>
+            <select id="stockTypeCode" required>
+              <option value="">Select type...</option>
+              <option value="COMMON">Common</option>
+              <option value="PREFERRED">Preferred</option>
+              <option value="WARRANT">Warrant</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="stockTypeDisplayName">Display Name *</label>
+            <input type="text" id="stockTypeDisplayName" placeholder="e.g., Common Stock" required />
+          </div>
         </div>
-        <div class="form-group">
-          <label for="stockTypeDisplayName">Display Name *</label>
-          <input type="text" id="stockTypeDisplayName" placeholder="e.g., Common Stock" required />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stockTypeParValue">Par Value ($)</label>
+            <input type="number" id="stockTypeParValue" step="0.000001" min="0" placeholder="e.g., 0.0001" />
+          </div>
+          <div class="form-group">
+            <label for="stockTypeAuthorizedShares">Authorized Shares *</label>
+            <input type="number" id="stockTypeAuthorizedShares" min="0" step="1" placeholder="e.g., 10000000" required />
+          </div>
         </div>
-        <div class="form-group checkbox-group">
-          <label>
-            <input type="checkbox" id="stockTypeActive" checked />
-            Active
-          </label>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stockTypeDividendRate">Dividend Rate (%)</label>
+            <input type="number" id="stockTypeDividendRate" step="0.01" min="0" placeholder="e.g., 8.00" />
+          </div>
+          <div class="form-group">
+            <label for="stockTypeLiquidationPref">Liquidation Preference</label>
+            <input type="text" id="stockTypeLiquidationPref" placeholder="e.g., 1x non-participating" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group checkbox-group">
+            <label>
+              <input type="checkbox" id="stockTypeVotingRights" checked />
+              Voting Rights
+            </label>
+          </div>
+          <div class="form-group checkbox-group">
+            <label>
+              <input type="checkbox" id="stockTypeActive" checked />
+              Active
+            </label>
+          </div>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" onclick="UI.closeModal('stockTypeModal')">Cancel</button>
-          <button type="submit" class="btn btn-gold">Save Stock Type</button>
+          <button type="submit" class="btn btn-gold" id="stockTypeSubmitBtn">Save Stock Type</button>
         </div>
       </form>
     </div>
@@ -322,9 +358,15 @@
       <form id="seriesForm" onsubmit="AdminApp.handleSeriesSubmit(event)">
         <input type="hidden" id="seriesId" />
         <input type="hidden" id="seriesStockTypeId" />
-        <div class="form-group">
-          <label for="seriesName">Series Name *</label>
-          <input type="text" id="seriesName" placeholder="e.g., A, B, C" required />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="seriesName">Series Name *</label>
+            <input type="text" id="seriesName" placeholder="e.g., A, B, C" required />
+          </div>
+          <div class="form-group">
+            <label for="seriesAuthorizedShares">Authorized Shares</label>
+            <input type="number" id="seriesAuthorizedShares" min="0" step="1" placeholder="e.g., 1000000" />
+          </div>
         </div>
         <div class="form-group checkbox-group">
           <label>

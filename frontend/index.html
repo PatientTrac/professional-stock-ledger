@@ -523,12 +523,65 @@
         <h2>Ready to Secure Your <span class="text-gradient-gold">Equity Future?</span></h2>
         <p>Join hundreds of companies that trust AegisIQ to manage their cap tables with confidence. Get started today.</p>
         <div class="cta-buttons">
-          <button class="btn btn-hero btn-xl">Sign-up for free!</button>
-          <button class="btn btn-hero-outline btn-xl">Schedule Demo</button>
+		  <a href="login.html?mode=register" class="btn btn-hero btn-xl">Sign-up for free!</a>
+          <button class="btn btn-hero-outline btn-xl" id="scheduleDemoBtn">Schedule Demo</button>
         </div>
       </div>
     </section>
   </main>
+
+  <!-- Demo Request Dialog -->
+  <div class="demo-dialog-overlay hidden" id="demoDialogOverlay">
+    <div class="demo-dialog">
+      <button class="demo-dialog-close" id="demoDialogClose">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div class="demo-dialog-header">
+        <div class="demo-dialog-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </div>
+        <h3>Request a Demo</h3>
+        <p>Enter your details and we'll send you demo credentials instantly.</p>
+      </div>
+      <form class="demo-dialog-form" id="demoRequestForm">
+        <div class="demo-form-group">
+          <label for="demoFirstName">First Name</label>
+          <input type="text" id="demoFirstName" class="demo-form-input" placeholder="John" required />
+        </div>
+        <div class="demo-form-group">
+          <label for="demoLastName">Last Name</label>
+          <input type="text" id="demoLastName" class="demo-form-input" placeholder="Doe" required />
+        </div>
+        <div class="demo-form-group demo-form-full">
+          <label for="demoEmail">Email Address</label>
+          <input type="email" id="demoEmail" class="demo-form-input" placeholder="john@company.com" required />
+        </div>
+        <div class="demo-form-group demo-form-full">
+          <label for="demoCompany">Company (optional)</label>
+          <input type="text" id="demoCompany" class="demo-form-input" placeholder="Acme Inc." />
+        </div>
+        <button type="submit" class="btn btn-hero btn-xl demo-submit-btn" id="demoSubmitBtn">
+          Send Demo Credentials
+        </button>
+      </form>
+      <div class="demo-dialog-success hidden" id="demoSuccess">
+        <div class="demo-success-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <h3>Demo Credentials Sent!</h3>
+        <p>Check your email for your demo login details. You can start exploring AegisIQ right away.</p>
+        <button class="btn btn-hero-outline" id="demoCloseSuccess">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Footer -->
   <footer id="contact" class="footer">
@@ -617,7 +670,7 @@
           <span class="separator">|</span>
           <a href="#">Terms of Service</a>
           <span class="separator">|</span>
-          <a href="mailto:support@aegisiqstockledger.com">support@aegisiqstockledger.com</a>
+          <a href="mailto:sales@aegisiqstockledger.com">sales@aegisiqstockledger.com</a>
         </div>
       </div>
     </div>

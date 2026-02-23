@@ -142,4 +142,77 @@ document.addEventListener('DOMContentLoaded', function() {
     card.style.transition = `all 0.5s ease ${index * 0.1}s`;
     observer.observe(card);
   });
+
+  // ================================
+  // Demo Request Dialog
+  // ================================
+  const demoBtn = document.getElementById('scheduleDemoBtn');
+  const demoOverlay = document.getElementById('demoDialogOverlay');
+  const demoCloseBtn = document.getElementById('demoDialogClose');
+  const demoForm = document.getElementById('demoRequestForm');
+  const demoSuccess = document.getElementById('demoSuccess');
+  const demoCloseSuccess = document.getElementById('demoCloseSuccess');
+
+  function openDemoDialog() {
+    if (demoOverlay) {
+      demoOverlay.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeDemoDialog() {
+    if (demoOverlay) {
+      demoOverlay.classList.add('hidden');
+      document.body.style.overflow = '';
+      // Reset form state
+      if (demoForm) {
+        demoForm.classList.remove('hidden');
+        demoForm.reset();
+      }
+      if (demoSuccess) demoSuccess.classList.add('hidden');
+    }
+  }
+
+  if (demoBtn) demoBtn.addEventListener('click', openDemoDialog);
+  if (demoCloseBtn) demoCloseBtn.addEventListener('click', closeDemoDialog);
+  if (demoCloseSuccess) demoCloseSuccess.addEventListener('click', closeDemoDialog);
+
+  // Close on overlay click
+  if (demoOverlay) {
+    demoOverlay.addEventListener('click', function(e) {
+      if (e.target === demoOverlay) closeDemoDialog();
+    });
+  }
+
+  // Close on Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && demoOverlay && !demoOverlay.classList.contains('hidden')) {
+      closeDemoDialog();
+    }
+  });
+
+  if (demoForm) {
+    demoForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const submitBtn = document.getElementById('demoSubmitBtn');
+      
+      // Show loading state
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Sending...';
+      }
+
+      // Simulate API call (replace with real backend call later)
+      setTimeout(() => {
+        // Hide form, show success
+        demoForm.classList.add('hidden');
+        if (demoSuccess) demoSuccess.classList.remove('hidden');
+        
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Send Demo Credentials';
+        }
+      }, 1500);
+    });
+  }
 });

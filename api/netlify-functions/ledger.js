@@ -1,6 +1,7 @@
 // api/netlify-functions/ledger.js
 const { query } = require('./utils/db');
 const { authMiddleware, requireRole, enforceEntityScope } = require('./middleware/auth');
+const { logAudit, getClientIp } = require('./utils/auditLog');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
@@ -274,6 +275,14 @@ async function handleIssue(event) {
     ]
   );
 
+  await logAudit({
+    user_id: user.id, user_email: user.email, user_role: user.role,
+    entity_id: user.entity_id, action: 'ISSUE_SHARES',
+    resource_type: 'SHARE_TRANSACTION', resource_id: result.rows[0].id,
+    details: { shareholder_id, entity_stock_type_id, shares, certificate_number },
+    ip_address: getClientIp(event),
+  });
+
   return json(201, { success:true, transaction: result.rows[0] }, headers);
 }
 
@@ -403,6 +412,14 @@ async function handleTransfer(event) {
     ]
   );
 
+  await logAudit({
+    user_id: user.id, user_email: user.email, user_role: user.role,
+    entity_id: user.entity_id, action: 'TRANSFER_SHARES',
+    resource_type: 'SHARE_TRANSACTION', resource_id: outResult.rows[0].id,
+    details: { from_shareholder_id, to_shareholder_id, entity_stock_type_id, shares: sharesNum },
+    ip_address: getClientIp(event),
+  });
+
   return json(201, { 
     success:true, 
     transactions: {
@@ -467,6 +484,14 @@ async function handleCancel(event) {
       user.id,
     ]
   );
+
+  await logAudit({
+    user_id: user.id, user_email: user.email, user_role: user.role,
+    entity_id: user.entity_id, action: 'CANCEL_SHARES',
+    resource_type: 'SHARE_TRANSACTION', resource_id: result.rows[0].id,
+    details: { shareholder_id, entity_stock_type_id, shares: sharesNum },
+    ip_address: getClientIp(event),
+  });
 
   return json(201, { success:true, transaction: result.rows[0] }, headers);
 }
@@ -617,6 +642,14 @@ async function handleSplit(event) {
   const totalOutstandingAfter = adjustments.reduce(
     (sum, a) => sum + a.post_split_shares, 0
   );
+
+  await logAudit({
+    user_id: user.id, user_email: user.email, user_role: user.role,
+    entity_id: entityId, action: 'EXECUTE_SPLIT',
+    resource_type: 'SHARE_TRANSACTION',
+    details: { split_direction, ratio: `${oldNum}:${newNum}`, rounding: roundMode, affected_holders: adjustments.length, total_before: totalOutstandingBefore, total_after: totalOutstandingAfter },
+    ip_address: getClientIp(event),
+  });
 
   return json(201, {
     success: true,
