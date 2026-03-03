@@ -46,17 +46,22 @@ const Auth = {
 const API = {
   async request(path, options = {}) {
     const token = Auth.getToken();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
     const config = {
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers
       },
+      signal: controller.signal,
       ...options
     };
     try {
       const res = await fetch(`${CONFIG.API_BASE_URL}${path}`, config);
-      if (res.status === 401) { Auth.logout(); return null; }
+      clearTimeout(timeoutId);
+      if (res.status === 401 && !path.includes('/stripe')) { Auth.logout(); return null; }
 
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
@@ -69,6 +74,10 @@ const API = {
       if (!res.ok || data.success === false) throw new Error(data.error || 'API Error');
       return data;
     } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timed out. Please try again.');
+      }
       console.error('API Error:', error);
       throw error;
     }
@@ -209,7 +218,7 @@ const AdminApp = {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tabName}`));
 
     // Update topbar title
-    const titleMap = { 'shareholders': 'Shareholders', 'stock-types': 'Stock Types', 'users': 'Users', 'entities': 'Entity Settings' };
+    const titleMap = { 'shareholders': 'Shareholders', 'stock-types': 'Stock Types', 'users': 'Users', 'entities': 'Entity Settings', 'certificates': 'Certificates', 'plan-billing': 'Plan & Billing' };
     const titleEl = document.getElementById('adminPageTitle');
     if (titleEl) titleEl.textContent = titleMap[tabName] || 'Admin';
 
@@ -221,6 +230,8 @@ const AdminApp = {
     else if (tabName === 'stock-types') this.loadStockTypes();
     else if (tabName === 'users') this.loadUsers();
     else if (tabName === 'entities') this.renderEntitiesTable();
+    else if (tabName === 'certificates') this.loadCertificates();
+    else if (tabName === 'plan-billing') this.loadPlanBilling();
   },
 
   /* ---- ENTITIES DATA ---- */
@@ -275,6 +286,7 @@ const AdminApp = {
     if (this.state.currentTab === 'shareholders') this.loadShareholders();
     else if (this.state.currentTab === 'stock-types') this.loadStockTypes();
     else if (this.state.currentTab === 'users') this.loadUsers();
+    else if (this.state.currentTab === 'certificates') this.loadCertificates();
   },
 
   /* ---- SHAREHOLDERS ---- */
@@ -939,6 +951,573 @@ const AdminApp = {
       UI.toast(error.message || 'Failed to update entity status', 'error');
       await this.loadEntities();
       this.renderEntitiesTable();
+    }
+  },
+
+  /* ---- PLAN & BILLING (Seat Management) ---- */
+  async loadPlanBilling() {
+    const container = document.getElementById('planBillingContent');
+    if (!container) return;
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading plan details...</span></div>';
+
+    try {
+      const data = await API.get('/stripe?action=seat-usage');
+      if (!data || !data.seat_usage) {
+        this.renderNoPlan(container);
+        return;
+      }
+      this.renderPlanBilling(container, data.seat_usage);
+    } catch (error) {
+      console.error('Plan & Billing not available yet:', error.message);
+      this.renderNoPlan(container);
+    }
+  },
+
+  renderNoPlan(container) {
+    container.innerHTML = `
+      <div class="plan-card">
+        <div class="plan-card-header">
+          <div class="plan-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+              <line x1="1" y1="10" x2="23" y2="10"></line>
+            </svg>
+          </div>
+          <div>
+            <h3 class="plan-name">No Active Plan</h3>
+            <p class="plan-status">Subscribe to unlock full features</p>
+          </div>
+        </div>
+        <div class="plan-card-body">
+          <p style="color:var(--text-muted);margin-bottom:1.5rem;">Choose a plan to manage your equity ledger with compliance-grade tools.</p>
+          <a href="/pricing.html" class="btn btn-gold">View Plans & Subscribe</a>
+        </div>
+      </div>
+    `;
+  },
+
+  renderPlanBilling(container, usage) {
+    const seatPercent = usage.seat_limit > 0 ? Math.min(100, Math.round((usage.seats_used / usage.seat_limit) * 100)) : 0;
+    const isNearLimit = seatPercent >= 80;
+    const isAtLimit = usage.seats_used >= usage.seat_limit;
+    const extraSeatCost = usage.plan === 'business' ? '$15' : '$20';
+
+    container.innerHTML = `
+      <div class="plan-billing-grid">
+        <!-- Plan Card -->
+        <div class="plan-card">
+          <div class="plan-card-header">
+            <div class="plan-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="plan-name">${UI.escapeHtml(usage.plan_label)} Plan</h3>
+              <p class="plan-status">
+                <span class="plan-status-dot ${usage.status === 'active' ? 'active' : ''}"></span>
+                ${usage.status === 'active' ? 'Active' : usage.status === 'trialing' ? 'Trial' : usage.status}
+              </p>
+            </div>
+          </div>
+          <div class="plan-card-body">
+            <div class="plan-actions">
+              <button class="btn btn-outline btn-sm" onclick="AdminApp.openBillingPortal()">Manage Billing</button>
+              <a href="/pricing.html" class="btn btn-gold btn-sm">Upgrade Plan</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Seat Usage Card -->
+        <div class="plan-card seat-card">
+          <div class="plan-card-header">
+            <div class="plan-icon seat-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <div>
+              <h3 class="plan-name">Seat Usage</h3>
+              <p class="plan-status">${usage.seats_used} of ${usage.seat_limit} seats used</p>
+            </div>
+          </div>
+          <div class="plan-card-body">
+            <div class="seat-progress-container">
+              <div class="seat-progress-bar">
+                <div class="seat-progress-fill ${isNearLimit ? 'warning' : ''} ${isAtLimit ? 'danger' : ''}" style="width: ${seatPercent}%"></div>
+              </div>
+              <div class="seat-progress-labels">
+                <span>${usage.seats_used} used</span>
+                <span>${usage.seat_limit - usage.seats_used} remaining</span>
+              </div>
+            </div>
+            ${isAtLimit ? `
+              <div class="seat-warning">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <span>Seat limit reached. Upgrade or purchase extra seats (${extraSeatCost}/user/mo).</span>
+              </div>
+            ` : isNearLimit ? `
+              <div class="seat-warning mild">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span>Nearing seat limit. Extra seats available at ${extraSeatCost}/user/mo.</span>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async openBillingPortal() {
+    try {
+      const data = await API.get('/stripe?action=portal');
+      if (data && data.url) {
+        window.open(data.url, '_blank');
+      } else {
+        UI.toast('Could not open billing portal', 'error');
+      }
+    } catch (error) {
+      UI.toast(error.message || 'Failed to open billing portal', 'error');
+    }
+  },
+
+  /* ---- CERTIFICATES ---- */
+  async loadCertificates() {
+    if (!this.state.selectedEntityId) {
+      const container = document.getElementById('certificatesTable');
+      container.innerHTML = '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>Select an entity to view certificates</span></div>';
+      return;
+    }
+    const container = document.getElementById('certificatesTable');
+    UI.showLoader(container, 'Loading certificates...');
+
+    const filterStatus = document.getElementById('certFilterStatus')?.value || '';
+    const searchTerm = document.getElementById('certSearchInput')?.value?.toLowerCase() || '';
+
+    try {
+      let url = `/certificates?action=list&entity_id=${this.state.selectedEntityId}`;
+      if (filterStatus) url += `&status=${filterStatus}`;
+
+      const data = await API.get(url);
+      let certs = data.certificates || [];
+
+      if (searchTerm) {
+        certs = certs.filter(c =>
+          (c.shareholder_name || '').toLowerCase().includes(searchTerm) ||
+          (c.certificate_number || '').toLowerCase().includes(searchTerm)
+        );
+      }
+
+      this.state.certificates = certs;
+      this.renderCertificatesTable();
+    } catch (error) {
+      console.error('Error loading certificates:', error);
+      container.innerHTML = '<div class="empty-state"><span>Failed to load certificates</span></div>';
+    }
+  },
+
+  renderCertificatesTable() {
+    const container = document.getElementById('certificatesTable');
+    const certs = this.state.certificates || [];
+
+    if (certs.length === 0) {
+      container.innerHTML = '<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>No certificates found</span></div>';
+      return;
+    }
+
+    const fmt = (v) => v !== null && v !== undefined ? Number(v).toLocaleString() : '—';
+    const fmtDate = (d) => { if (!d) return 'N/A'; const dt = new Date(d); return dt.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }); };
+
+    let html = '<table class="data-table"><thead><tr><th>Certificate #</th><th>Shareholder</th><th>Stock Type</th><th>Series</th><th>Shares</th><th>Issue Date</th><th>Status</th><th>Lost/Replaced</th><th style="width:180px;">Actions</th></tr></thead><tbody>';
+
+    certs.forEach(cert => {
+      const statusClass = cert.status === 'ISSUED' ? 'active' : (cert.status === 'REPLACED' ? 'warning' : 'inactive');
+      const lostInfo = cert.lost_certificate_number ? `<span class="sidebar-badge" style="font-size:9px;" title="Replaces lost cert">Replaces: ${UI.escapeHtml(cert.lost_certificate_number)}</span>` : '';
+      const replacedInfo = cert.cancelled_reason === 'LOST' && cert.replaced_by_certificate_id ? '<span class="sidebar-badge" style="font-size:9px;background:var(--warning);">LOST</span>' : '';
+      html += `<tr>
+        <td class="mono">${UI.escapeHtml(cert.certificate_number)}</td>
+        <td>${UI.escapeHtml(cert.shareholder_name)}</td>
+        <td>${UI.escapeHtml(cert.stock_type_name || cert.stock_type)}</td>
+        <td>${cert.series || 'N/A'}</td>
+        <td>${Number(cert.shares).toLocaleString()}</td>
+        <td>${fmtDate(cert.issue_date)}</td>
+        <td><span class="status-badge ${statusClass}"><span class="dot"></span>${cert.status}</span></td>
+        <td>${lostInfo}${replacedInfo}</td>
+        <td><div class="table-actions">
+          <button class="btn-table" onclick="AdminApp.downloadCertificatePdf(${cert.id})" title="Download PDF">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </button>
+          ${cert.status === 'ISSUED' && Auth.isAdmin() ? `
+            <button class="btn-table danger" onclick="AdminApp.openCancelCertificateModal(${cert.id}, '${UI.escapeHtml(cert.certificate_number)}', '${UI.escapeHtml(cert.shareholder_name)}', ${cert.shares})" title="Cancel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+            </button>
+            <button class="btn-table edit" onclick="AdminApp.openReissueCertificateModal(${cert.id}, '${UI.escapeHtml(cert.certificate_number)}', '${UI.escapeHtml(cert.shareholder_name)}', ${cert.shares})" title="Reissue">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="17 1 21 5 17 9"></polyline>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                <polyline points="7 23 3 19 7 15"></polyline>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+              </svg>
+            </button>
+            <button class="btn-table" onclick="AdminApp.openReportLostModal(${cert.id}, '${UI.escapeHtml(cert.certificate_number)}', '${UI.escapeHtml(cert.shareholder_name)}', ${cert.shares})" title="Report Lost" style="color:var(--warning);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+            </button>
+          ` : ''}
+          ${cert.cancelled_reason === 'LOST' ? `
+            <button class="btn-table" onclick="AdminApp.openGenerateAffidavitModal(${cert.id}, '${UI.escapeHtml(cert.certificate_number)}', '${UI.escapeHtml(cert.shareholder_name)}', ${cert.shares})" title="Generate Affidavit" style="color:var(--gold);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+            </button>
+          ` : ''}
+          ${cert.replaced_by_certificate_id ? '<span class="sidebar-badge" style="font-size:9px;">Replaced</span>' : ''}
+        </div></td>
+      </tr>`;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  },
+
+  openGenerateCertificateModal() {
+    if (!this.state.selectedEntityId) { UI.toast('Please select an entity first', 'warning'); return; }
+    const form = document.getElementById('generateCertificateForm');
+    if (form) form.reset();
+
+    const shSelect = document.getElementById('certShareholder');
+    shSelect.innerHTML = '<option value="">Select shareholder...</option>';
+    (this.state.shareholders || []).forEach(sh => {
+      const opt = document.createElement('option');
+      opt.value = sh.id;
+      opt.textContent = `${sh.full_name} (${sh.external_id || sh.id})`;
+      shSelect.appendChild(opt);
+    });
+
+    const stSelect = document.getElementById('certStockType');
+    stSelect.innerHTML = '<option value="">Select stock type...</option>';
+    (this.state.stockTypes || []).forEach(st => {
+      if (!st.is_active) return;
+      const opt = document.createElement('option');
+      opt.value = st.id;
+      opt.textContent = st.display_name;
+      opt.dataset.supportsSeries = st.supports_series;
+      stSelect.appendChild(opt);
+    });
+
+    document.getElementById('certIssueDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('certSeries').innerHTML = '<option value="">N/A</option>';
+    document.getElementById('certSeries').disabled = true;
+    this.state.isSubmitting = false;
+    UI.openModal('generateCertificateModal');
+  },
+
+  async handleCertStockTypeChange() {
+    const stSelect = document.getElementById('certStockType');
+    const seriesSelect = document.getElementById('certSeries');
+    const selectedOption = stSelect.options[stSelect.selectedIndex];
+    const supportsSeries = selectedOption?.dataset.supportsSeries === 'true';
+
+    if (!supportsSeries) {
+      seriesSelect.innerHTML = '<option value="">N/A</option>';
+      seriesSelect.disabled = true;
+      return;
+    }
+
+    seriesSelect.innerHTML = '<option value="">Loading...</option>';
+    seriesSelect.disabled = true;
+
+    try {
+      const data = await API.get(`/stockTypes?action=list-series&entity_stock_type_id=${stSelect.value}`);
+      const series = (data.series || []).filter(s => s.is_active);
+      seriesSelect.innerHTML = '<option value="">Select series...</option>';
+      series.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.series;
+        seriesSelect.appendChild(opt);
+      });
+      seriesSelect.disabled = false;
+    } catch (error) {
+      seriesSelect.innerHTML = '<option value="">Error</option>';
+    }
+  },
+
+  async handleGenerateCertificateSubmit(event) {
+    event.preventDefault();
+    if (this.state.isSubmitting) return;
+    this.state.isSubmitting = true;
+    const submitBtn = document.getElementById('certSubmitBtn');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Generating...'; }
+
+    const payload = {
+      shareholder_id: document.getElementById('certShareholder').value,
+      entity_stock_type_id: document.getElementById('certStockType').value,
+      entity_stock_series_id: document.getElementById('certSeries').value || null,
+      shares: parseInt(document.getElementById('certShares').value),
+      issue_date: document.getElementById('certIssueDate').value || null,
+      signed_by_name: document.getElementById('certSignedByName').value || null,
+      signed_by_title: document.getElementById('certSignedByTitle').value || null,
+      countersigned_by_name: document.getElementById('certCountersignedByName').value || null,
+      countersigned_by_title: document.getElementById('certCountersignedByTitle').value || null,
+    };
+
+    try {
+      const result = await API.post('/certificates?action=generate', payload);
+      UI.closeModal('generateCertificateModal');
+      UI.toast(`Certificate ${result.certificate.certificate_number} generated`, 'success');
+      await this.loadCertificates();
+      this.downloadCertificatePdf(result.certificate.id);
+    } catch (error) {
+      UI.toast(error.message || 'Failed to generate certificate', 'error');
+    } finally {
+      this.state.isSubmitting = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Generate Certificate'; }
+    }
+  },
+
+  async downloadCertificatePdf(certificateId) {
+    const token = Auth.getToken();
+    try {
+      const res = await fetch(`${CONFIG.API_BASE_URL}/certificates?action=download&certificate_id=${certificateId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        UI.toast(errData.error || 'Failed to download', 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `certificate_${certificateId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      UI.toast('Failed to download certificate PDF', 'error');
+    }
+  },
+
+  openCancelCertificateModal(certId, certNumber, shareholderName, shares) {
+    document.getElementById('cancelCertId').value = certId;
+    document.getElementById('cancelCertReason').value = '';
+    document.getElementById('cancelCertInfo').innerHTML = `
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;">
+        <p style="margin:0 0 4px;"><strong>Certificate:</strong> ${UI.escapeHtml(certNumber)}</p>
+        <p style="margin:0 0 4px;"><strong>Shareholder:</strong> ${UI.escapeHtml(shareholderName)}</p>
+        <p style="margin:0;"><strong>Shares:</strong> ${Number(shares).toLocaleString()}</p>
+      </div>`;
+    UI.openModal('cancelCertificateModal');
+  },
+
+  async handleCancelCertificateSubmit(event) {
+    event.preventDefault();
+    if (this.state.isSubmitting) return;
+    this.state.isSubmitting = true;
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Cancelling...'; }
+
+    try {
+      await API.post('/certificates?action=cancel', {
+        certificate_id: parseInt(document.getElementById('cancelCertId').value),
+        reason: document.getElementById('cancelCertReason').value,
+      });
+      UI.closeModal('cancelCertificateModal');
+      UI.toast('Certificate cancelled', 'success');
+      await this.loadCertificates();
+    } catch (error) {
+      UI.toast(error.message || 'Failed to cancel certificate', 'error');
+    } finally {
+      this.state.isSubmitting = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Cancel Certificate'; }
+    }
+  },
+
+  openReissueCertificateModal(certId, certNumber, shareholderName, shares) {
+    document.getElementById('reissueCertId').value = certId;
+    document.getElementById('reissueReason').value = '';
+    document.getElementById('reissueNewShares').value = '';
+    document.getElementById('reissueCertInfo').innerHTML = `
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;">
+        <p style="margin:0 0 4px;"><strong>Original Certificate:</strong> ${UI.escapeHtml(certNumber)}</p>
+        <p style="margin:0 0 4px;"><strong>Shareholder:</strong> ${UI.escapeHtml(shareholderName)}</p>
+        <p style="margin:0;"><strong>Shares:</strong> ${Number(shares).toLocaleString()}</p>
+      </div>`;
+
+    const select = document.getElementById('reissueNewShareholder');
+    select.innerHTML = '<option value="">Same shareholder</option>';
+    (this.state.shareholders || []).forEach(sh => {
+      const opt = document.createElement('option');
+      opt.value = sh.id;
+      opt.textContent = `${sh.full_name} (${sh.external_id || sh.id})`;
+      select.appendChild(opt);
+    });
+    UI.openModal('reissueCertificateModal');
+  },
+
+  async handleReissueCertificateSubmit(event) {
+    event.preventDefault();
+    if (this.state.isSubmitting) return;
+    this.state.isSubmitting = true;
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Reissuing...'; }
+
+    try {
+      const result = await API.post('/certificates?action=reissue', {
+        certificate_id: parseInt(document.getElementById('reissueCertId').value),
+        reason: document.getElementById('reissueReason').value,
+        new_shareholder_id: document.getElementById('reissueNewShareholder').value ? parseInt(document.getElementById('reissueNewShareholder').value) : null,
+        new_shares: document.getElementById('reissueNewShares').value ? parseInt(document.getElementById('reissueNewShares').value) : null,
+      });
+      UI.closeModal('reissueCertificateModal');
+      UI.toast(`Certificate reissued: ${result.new_certificate.certificate_number}`, 'success');
+      await this.loadCertificates();
+      this.downloadCertificatePdf(result.new_certificate.id);
+    } catch (error) {
+      UI.toast(error.message || 'Failed to reissue certificate', 'error');
+    } finally {
+      this.state.isSubmitting = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Reissue Certificate'; }
+    }
+  },
+
+  /* ---- REPORT LOST CERTIFICATE ---- */
+  openReportLostModal(certId, certNumber, shareholderName, shares) {
+    document.getElementById('lostCertId').value = certId;
+    document.getElementById('lostSignedByName').value = '';
+    document.getElementById('lostSignedByTitle').value = '';
+    document.getElementById('lostCountersignedByName').value = '';
+    document.getElementById('lostCountersignedByTitle').value = '';
+    document.getElementById('lostCertInfo').innerHTML = `
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;">
+        <p style="margin:0 0 4px;"><strong>Certificate:</strong> ${UI.escapeHtml(certNumber)}</p>
+        <p style="margin:0 0 4px;"><strong>Shareholder:</strong> ${UI.escapeHtml(shareholderName)}</p>
+        <p style="margin:0;"><strong>Shares:</strong> ${Number(shares).toLocaleString()}</p>
+      </div>`;
+    UI.openModal('reportLostCertificateModal');
+  },
+
+  async handleReportLostSubmit(event) {
+    event.preventDefault();
+    if (this.state.isSubmitting) return;
+    this.state.isSubmitting = true;
+    const submitBtn = document.getElementById('lostCertSubmitBtn');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Processing...'; }
+
+    try {
+      const result = await API.post('/certificates?action=report-lost', {
+        certificate_id: parseInt(document.getElementById('lostCertId').value),
+        signed_by_name: document.getElementById('lostSignedByName').value || null,
+        signed_by_title: document.getElementById('lostSignedByTitle').value || null,
+        countersigned_by_name: document.getElementById('lostCountersignedByName').value || null,
+        countersigned_by_title: document.getElementById('lostCountersignedByTitle').value || null,
+      });
+      UI.closeModal('reportLostCertificateModal');
+      UI.toast(`Lost certificate reported. Replacement: ${result.new_certificate.certificate_number}`, 'success');
+      await this.loadCertificates();
+      this.downloadCertificatePdf(result.new_certificate.id);
+    } catch (error) {
+      UI.toast(error.message || 'Failed to report lost certificate', 'error');
+    } finally {
+      this.state.isSubmitting = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Report Lost & Issue Replacement'; }
+    }
+  },
+
+  /* ---- LOST CERTIFICATE AFFIDAVIT ---- */
+  openGenerateAffidavitModal(certId, certNumber, shareholderName, shares) {
+    document.getElementById('affidavitCertId').value = certId;
+    document.getElementById('affidavitNarrative').value = '';
+    document.getElementById('affidavitSignerName').value = '';
+    document.getElementById('affidavitSignerTitle').value = '';
+    document.getElementById('affidavitNotaryState').value = '';
+    document.getElementById('affidavitNotaryCounty').value = '';
+    document.getElementById('affidavitCertInfo').innerHTML = `
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;">
+        <p style="margin:0 0 4px;"><strong>Lost Certificate:</strong> ${UI.escapeHtml(certNumber)}</p>
+        <p style="margin:0 0 4px;"><strong>Shareholder:</strong> ${UI.escapeHtml(shareholderName)}</p>
+        <p style="margin:0;"><strong>Shares:</strong> ${Number(shares).toLocaleString()}</p>
+      </div>`;
+    UI.openModal('generateAffidavitModal');
+  },
+
+  async handleGenerateAffidavitSubmit(event) {
+    event.preventDefault();
+    if (this.state.isSubmitting) return;
+    this.state.isSubmitting = true;
+    const submitBtn = document.getElementById('affidavitSubmitBtn');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Generating...'; }
+
+    const token = Auth.getToken();
+    try {
+      const res = await fetch(`${CONFIG.API_BASE_URL}/certificates?action=generate-affidavit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          certificate_id: parseInt(document.getElementById('affidavitCertId').value),
+          narrative: document.getElementById('affidavitNarrative').value || null,
+          signer_name: document.getElementById('affidavitSignerName').value || null,
+          signer_title: document.getElementById('affidavitSignerTitle').value || null,
+          notary_state: document.getElementById('affidavitNotaryState').value || null,
+          notary_county: document.getElementById('affidavitNotaryCounty').value || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to generate affidavit');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Lost_Certificate_Affidavit.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+      UI.closeModal('generateAffidavitModal');
+      UI.toast('Lost Certificate Affidavit generated', 'success');
+    } catch (error) {
+      UI.toast(error.message || 'Failed to generate affidavit', 'error');
+    } finally {
+      this.state.isSubmitting = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Generate Affidavit PDF'; }
     }
   }
 };

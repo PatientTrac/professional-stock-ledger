@@ -6,7 +6,7 @@ const POSTMARK_API_URL = 'https://api.postmarkapp.com/email';
 
 async function sendEmail({ to, subject, htmlBody, textBody }) {
   const apiKey = process.env.POSTMARK_SERVER_TOKEN;
-  const fromEmail = process.env.FROM_EMAIL || 'noreply@aegisiq.com';
+	const fromEmail = process.env.FROM_EMAIL || 'agha.zahid@patienttrac.com';
 
   if (!apiKey) {
     console.error('POSTMARK_SERVER_TOKEN is not set');
@@ -34,7 +34,8 @@ async function sendEmail({ to, subject, htmlBody, textBody }) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    console.error('Postmark error:', err);
+	console.error('Postmark status:', response.status);
+	console.error('Postmark raw response:', await response.text());
     throw new Error('Failed to send email: ' + (err.Message || response.statusText));
   }
 

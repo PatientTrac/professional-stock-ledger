@@ -23,7 +23,6 @@ exports.handler = async (event) => {
 
   console.log('AUTH:', { method: event.httpMethod, action });
 
-													
   if (event.httpMethod !== 'POST') {
     return json(405, { success:false, error:'Method not allowed' });
   }
@@ -33,8 +32,6 @@ exports.handler = async (event) => {
     if (action === 'register') return await handleRegister(body);
     if (action === 'forgot-password') return await handleForgotPassword(body);
     if (action === 'logout') return json(200, { success:true, message:'Logged out' });
-
-					 
     if (action === 'create-user') return await handleCreateUser(event, body);
 
     return json(400, { success:false, error:'Invalid action or method' });
@@ -164,13 +161,12 @@ async function handleForgotPassword(body) {
 
 // ✅ Admin-only user creation
 async function handleCreateUser(event, body) {
-																		
+
   const auth = await authMiddleware(event);
   if (auth.statusCode) return auth;
 
   const { user, headers } = auth;
 
-							  
   const allowed = requireRole(['SUPER_ADMIN', 'ADMIN'])(user);
   if (!allowed) return json(403, { success:false, error:'Forbidden: Insufficient permissions' }, headers);
 
@@ -185,10 +181,8 @@ async function handleCreateUser(event, body) {
     return json(400, { success:false, error:'Invalid role' }, headers);
   }
 
-							
   let targetEntityId = entity_id;
 
-																	 
   if (user.role !== 'SUPER_ADMIN') {
     targetEntityId = user.entity_id;
   } else {

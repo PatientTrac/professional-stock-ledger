@@ -81,6 +81,48 @@ async function query(text, params = []) {
 }
 
 /**
+ * Get a dedicated client from the pool for transactions.
+ * MUST call client.release() when done.
+ * Usage:
+ *   const client = await getClient();
+ *   try {
+ *     await client.query('BEGIN');
+ *     await client.query('INSERT ...', [...]);
+ *     await client.query('COMMIT');
+ *   } catch (err) {
+ *     await client.query('ROLLBACK');
+ *     throw err;
+ *   } finally {
+ *     client.release();
+ *   }
+ */
+async function getClient() {
+  const pool = getPool();
+  return pool.connect();
+}
+
+/**
+ * Run a function inside a transaction with a dedicated client.
+ * Automatically handles BEGIN, COMMIT, ROLLBACK, and client.release().
+ * @param {Function} fn - async function receiving (client) => { ... }
+ * @returns {*} return value of fn
+ */
+async function withTransaction(fn) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Close the database connection pool
  */
 async function closePool() {
@@ -91,4 +133,4 @@ async function closePool() {
   }
 }
 
-module.exports = { query, getPool, closePool };
+module.exports = { query, getPool, getClient, withTransaction, closePool };

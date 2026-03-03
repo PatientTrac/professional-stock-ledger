@@ -173,6 +173,61 @@ async function initDb() {
         `);
         console.log('✅ Shareholder import raw table ready');
 
+        // Entity stock types table (governance-grade)
+        await query(`
+            CREATE TABLE IF NOT EXISTS entity_stock_types (
+                id SERIAL PRIMARY KEY,
+                entity_id INTEGER REFERENCES entities(id) ON DELETE CASCADE NOT NULL,
+                stock_type VARCHAR(20) NOT NULL,
+                display_name VARCHAR(255) NOT NULL,
+                supports_series BOOLEAN DEFAULT FALSE,
+                par_value NUMERIC(20,6),
+                authorized_shares NUMERIC(20,0),
+                dividend_rate NUMERIC(10,4),
+                liquidation_preference TEXT,
+                has_voting_rights BOOLEAN DEFAULT TRUE,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(entity_id, stock_type)
+            );
+        `);
+        console.log('✅ Entity stock types table ready');
+
+        // Entity stock series table
+        await query(`
+            CREATE TABLE IF NOT EXISTS entity_stock_series (
+                id SERIAL PRIMARY KEY,
+                entity_stock_type_id INTEGER REFERENCES entity_stock_types(id) ON DELETE CASCADE NOT NULL,
+                series VARCHAR(100) NOT NULL,
+                authorized_shares NUMERIC(20,0),
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(entity_stock_type_id, series)
+            );
+        `);
+        console.log('✅ Entity stock series table ready');
+
+        // Add governance columns if they don't exist (migration for existing DBs)
+        const govCols = [
+            { table: 'entity_stock_types', col: 'par_value', type: 'NUMERIC(20,6)' },
+            { table: 'entity_stock_types', col: 'authorized_shares', type: 'NUMERIC(20,0)' },
+            { table: 'entity_stock_types', col: 'dividend_rate', type: 'NUMERIC(10,4)' },
+            { table: 'entity_stock_types', col: 'liquidation_preference', type: 'TEXT' },
+            { table: 'entity_stock_types', col: 'has_voting_rights', type: 'BOOLEAN DEFAULT TRUE' },
+            { table: 'entity_stock_series', col: 'authorized_shares', type: 'NUMERIC(20,0)' }
+        ];
+        for (const g of govCols) {
+            await query(`
+                DO $$ BEGIN
+                    ALTER TABLE ${g.table} ADD COLUMN ${g.col} ${g.type};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            `);
+        }
+        console.log('✅ Governance columns ensured');
+
         // Create indexes for performance
         await query(`CREATE INDEX IF NOT EXISTS idx_users_entity_id ON users(entity_id);`);
         await query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
@@ -182,6 +237,166 @@ async function initDb() {
         await query(`CREATE INDEX IF NOT EXISTS idx_share_transactions_date ON share_transactions(transaction_date);`);
         await query(`CREATE INDEX IF NOT EXISTS idx_share_transactions_stock_type ON share_transactions(stock_type, series);`);
         await query(`CREATE INDEX IF NOT EXISTS idx_import_raw_entity_batch ON shareholder_import_raw(entity_id, import_batch_id);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_entity_stock_types_entity ON entity_stock_types(entity_id);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_entity_stock_series_type ON entity_stock_series(entity_stock_type_id);`);
+
+        // Transaction documents table (metadata for files in Supabase Storage)
+await query(`
+  CREATE TABLE IF NOT EXISTS transaction_documents (
+    id SERIAL PRIMARY KEY,
+
+    transaction_id INTEGER NOT NULL,
+    entity_id INTEGER NOT NULL,
+
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size BIGINT,
+    content_type TEXT,
+
+    uploaded_by INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_tx_docs_transaction
+      FOREIGN KEY (transaction_id)
+      REFERENCES share_transactions(id)
+      ON DELETE CASCADE,
+
+    CONSTRAINT fk_tx_docs_entity
+      FOREIGN KEY (entity_id)
+      REFERENCES entities(id)
+      ON DELETE CASCADE,
+
+    CONSTRAINT fk_tx_docs_user
+      FOREIGN KEY (uploaded_by)
+      REFERENCES users(id)
+      ON DELETE SET NULL
+  );
+`);
+
+await query(`
+  CREATE INDEX IF NOT EXISTS idx_transaction_docs_txn
+  ON transaction_documents(transaction_id, entity_id);
+`);
+
+await query(`
+  CREATE INDEX IF NOT EXISTS idx_transaction_docs_entity
+  ON transaction_documents(entity_id);
+`);
+        // Stock certificates table
+        await query(`
+          CREATE TABLE IF NOT EXISTS stock_certificates (
+            id SERIAL PRIMARY KEY,
+            entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE RESTRICT,
+            shareholder_id INTEGER NOT NULL REFERENCES shareholders(id) ON DELETE RESTRICT,
+            share_transaction_id INTEGER REFERENCES share_transactions(id) ON DELETE SET NULL,
+            entity_stock_type_id INTEGER REFERENCES entity_stock_types(id) ON DELETE RESTRICT,
+            entity_stock_series_id INTEGER REFERENCES entity_stock_series(id) ON DELETE SET NULL,
+            certificate_number VARCHAR(100) NOT NULL,
+            shares NUMERIC(20,4) NOT NULL,
+            issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            status VARCHAR(20) NOT NULL DEFAULT 'ISSUED',
+            cancelled_at TIMESTAMP,
+            cancelled_reason TEXT,
+            replaced_by_certificate_id INTEGER REFERENCES stock_certificates(id) ON DELETE SET NULL,
+            signed_by_name TEXT,
+            signed_by_title TEXT,
+            countersigned_by_name TEXT,
+            countersigned_by_title TEXT,
+            pdf_path TEXT,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        console.log('✅ Stock certificates table ready');
+
+        // Ensure status check constraint includes REPLACED
+        await query(`
+          DO $$ BEGIN
+            ALTER TABLE stock_certificates DROP CONSTRAINT IF EXISTS stock_certificates_status_check;
+            ALTER TABLE stock_certificates ADD CONSTRAINT stock_certificates_status_check
+              CHECK (status IN ('ISSUED', 'CANCELLED', 'REPLACED'));
+          EXCEPTION WHEN others THEN NULL;
+          END $$;
+        `);
+        console.log('✅ Stock certificates status constraint updated');
+
+        // Certificate sequences table (per-entity sequential numbering)
+        await query(`
+          CREATE TABLE IF NOT EXISTS certificate_sequences (
+            entity_id INTEGER PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
+            next_seq BIGINT NOT NULL DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        console.log('✅ Certificate sequences table ready');
+
+        // Certificate indexes
+        await query(`CREATE UNIQUE INDEX IF NOT EXISTS ux_cert_entity_number ON stock_certificates(entity_id, certificate_number);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_shareholder ON stock_certificates(shareholder_id);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_entity ON stock_certificates(entity_id);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_status ON stock_certificates(status);`);
+
+        // Add lost certificate columns (migration for existing DBs)
+        const lostCertCols = [
+            { col: 'lost_certificate_number', type: 'TEXT' },
+            { col: 'lost_certificate_id', type: 'INTEGER REFERENCES stock_certificates(id) ON DELETE SET NULL' },
+        ];
+        for (const lc of lostCertCols) {
+            await query(`
+                DO $$ BEGIN
+                    ALTER TABLE stock_certificates ADD COLUMN ${lc.col} ${lc.type};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            `);
+        }
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_lost_number ON stock_certificates(lost_certificate_number);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_lost_id ON stock_certificates(lost_certificate_id);`);
+        console.log('✅ Lost certificate columns ensured');
+
+        // Add certificate date tracking & source lineage columns (transfer agent model)
+        const certDateCols = [
+            { col: 'original_issue_date', type: 'DATE' },
+            { col: 'transfer_date', type: 'DATE' },
+            { col: 'source_certificate_id', type: 'INTEGER REFERENCES stock_certificates(id) ON DELETE SET NULL' },
+        ];
+        for (const dc of certDateCols) {
+            await query(`
+                DO $$ BEGIN
+                    ALTER TABLE stock_certificates ADD COLUMN ${dc.col} ${dc.type};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            `);
+        }
+        // Backfill original_issue_date from issue_date where NULL
+        await query(`UPDATE stock_certificates SET original_issue_date = issue_date WHERE original_issue_date IS NULL`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_source ON stock_certificates(source_certificate_id);`);
+        console.log('✅ Certificate date/source lineage columns ensured');
+
+        // Certificate documents table (affidavits etc.)
+        await query(`
+          CREATE TABLE IF NOT EXISTS certificate_documents (
+            id SERIAL PRIMARY KEY,
+            entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE RESTRICT,
+            certificate_id INTEGER REFERENCES stock_certificates(id) ON DELETE SET NULL,
+            lost_certificate_id INTEGER REFERENCES stock_certificates(id) ON DELETE SET NULL,
+            replacement_certificate_id INTEGER REFERENCES stock_certificates(id) ON DELETE SET NULL,
+            document_type TEXT NOT NULL CHECK (document_type IN ('LOST_CERTIFICATE_AFFIDAVIT')),
+            title TEXT NOT NULL DEFAULT 'Lost Certificate Affidavit',
+            pdf_path TEXT,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_docs_entity ON certificate_documents(entity_id);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_docs_certificate ON certificate_documents(certificate_id);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_docs_lost ON certificate_documents(lost_certificate_id);`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_cert_docs_replacement ON certificate_documents(replacement_certificate_id);`);
+        console.log('✅ Certificate documents table ready');
+
+        // Audit logs table
+        const { initAuditTable } = require('./auditLog');
+        await initAuditTable();
         
         console.log('✅ Database initialization complete');
         

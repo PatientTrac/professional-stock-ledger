@@ -1,14 +1,11 @@
 // api/netlify-functions/stockTypes.js
-const { query } = require('./utils/db');
+const { query, withTransaction } = require('./utils/db');
 const { authMiddleware, requireRole, enforceEntityScope } = require('./middleware/auth');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
     statusCode,
-			  
     headers: { 'Content-Type': 'application/json', ...extraHeaders },
-					  
-	  
     body: JSON.stringify(body),
   };
 }
@@ -19,7 +16,6 @@ function parseBody(event) {
   catch { throw new Error('Invalid JSON in request body'); }
 }
 
-															  
 function resolveTargetEntityId(user, providedEntityId) {
   if ((user.role || '').toUpperCase() === 'SUPER_ADMIN') {
     return providedEntityId || user.entity_id;
@@ -27,7 +23,7 @@ function resolveTargetEntityId(user, providedEntityId) {
   return user.entity_id;
 }
 
-									 
+
 function normTypeCode(v) {
   return String(v || '').trim().toUpperCase();
 }
@@ -36,11 +32,11 @@ const ALLOWED_TYPE_CODES = new Set(['COMMON', 'PREFERRED', 'WARRANT']);
 
 function normalizeSupportsSeries(stock_type, supports_series) {
   const code = normTypeCode(stock_type);
-																   
+
   if (code === 'PREFERRED' || code === 'WARRANT') return true;
-										 
+
   if (code === 'COMMON') return false;
-												
+
   return Boolean(supports_series);
 }
 
@@ -138,7 +134,6 @@ exports.handler = async (event) => {
 
 // ------------------------------------
 // GET: list-types (with issued shares computed from ledger)
-												  
 // ------------------------------------
 async function handleListTypes(event, params) {
   const auth = await authMiddleware(event);
@@ -200,7 +195,6 @@ async function handleGetType(event, params) {
 
 // ------------------------------------
 // POST: create-type (with governance fields)
-																			   
 // ------------------------------------
 async function handleCreateType(event) {
   const auth = await authMiddleware(event);
@@ -228,7 +222,6 @@ async function handleCreateType(event) {
   }
   if (!display_name) return json(400, { success: false, error: 'display_name is required' }, headers);
 
-												  
   const supports_series = normalizeSupportsSeries(stock_type, body.supports_series);
   const par_value = body.par_value !== undefined && body.par_value !== '' ? parseFloat(body.par_value) : null;
   const authorized_shares = body.authorized_shares !== undefined && body.authorized_shares !== '' ? parseInt(body.authorized_shares) : null;
@@ -261,8 +254,6 @@ async function handleCreateType(event) {
 
 // ------------------------------------
 // PUT: update-type (with governance lock enforcement)
-															
-																					
 // ------------------------------------
 async function handleUpdateType(event) {
   const auth = await authMiddleware(event);
@@ -354,15 +345,13 @@ async function handleUpdateType(event) {
   }
 
   if (!fields.length) return json(400, { success: false, error: 'No fields to update' }, headers);
-
-																							  
   const turningOffSeries =
     body.supports_series !== undefined &&
     Boolean(row.supports_series) === true &&
     Boolean(normalizeSupportsSeries(row.stock_type, body.supports_series)) === false;
 
-  await query('BEGIN');
-  try {
+  const result = await withTransaction(async (client) => {
+
     i++; values.push(id);
 
     const qText = `
@@ -371,27 +360,24 @@ async function handleUpdateType(event) {
       WHERE id = $${i}
       RETURNING *
     `;
-    const updated = await query(qText, values);
+    const updated = await client.query(qText, values);
 
     if (turningOffSeries) {
-      await query(
+      await client.query(
         `UPDATE entity_stock_series SET is_active = FALSE, updated_at = NOW() WHERE entity_stock_type_id = $1`,
         [id]
       );
     }
 
-    await query('COMMIT');
-    return json(200, { success: true, stock_type: updated.rows[0] }, headers);
-  } catch (e) {
-    await query('ROLLBACK');
-    throw e;
-  }
+    return updated.rows[0];
+  });
+
+  return json(200, { success: true, stock_type: result }, headers);
+   
 }
 
 // ------------------------------------
 // PUT: deactivate-type
-			   
-										   
 // ------------------------------------
 async function handleDeactivateType(event) {
   const auth = await authMiddleware(event);
@@ -413,30 +399,27 @@ async function handleDeactivateType(event) {
     return json(403, { success: false, error: 'Forbidden: Cannot manage this entity' }, headers);
   }
 
-  await query('BEGIN');
-  try {
-    const updated = await query(
+  const result = await withTransaction(async (client) => {
+	   
+    const updated = await client.query(
       `UPDATE entity_stock_types SET is_active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );
 
-																	 
-    await query(
+    await client.query(
       `UPDATE entity_stock_series SET is_active = FALSE, updated_at = NOW() WHERE entity_stock_type_id = $1`,
       [id]
     );
 
-    await query('COMMIT');
-    return json(200, { success: true, stock_type: updated.rows[0] }, headers);
-  } catch (e) {
-    await query('ROLLBACK');
-    throw e;
-  }
+    return updated.rows[0];
+  });
+
+  return json(200, { success: true, stock_type: result }, headers);
+   
 }
 
 // ------------------------------------
 // GET: list-series
-															  
 // ------------------------------------
 async function handleListSeries(event, params) {
   const auth = await authMiddleware(event);
@@ -474,7 +457,6 @@ async function handleListSeries(event, params) {
 
 // ------------------------------------
 // POST: create-series (with authorized_shares)
-													 
 // ------------------------------------
 async function handleCreateSeries(event) {
   const auth = await authMiddleware(event);
@@ -529,7 +511,6 @@ async function handleCreateSeries(event) {
 
 // ------------------------------------
 // PUT: update-series
-									
 // ------------------------------------
 async function handleUpdateSeries(event) {
   const auth = await authMiddleware(event);
@@ -593,8 +574,6 @@ async function handleUpdateSeries(event) {
 
 // ------------------------------------
 // PUT: deactivate-series
-			   
-						   
 // ------------------------------------
 async function handleDeactivateSeries(event) {
   const auth = await authMiddleware(event);

@@ -1,7 +1,8 @@
 // api/netlify-functions/ledger.js
-const { query } = require('./utils/db');
+const { query, withTransaction } = require('./utils/db');
 const { authMiddleware, requireRole, enforceEntityScope } = require('./middleware/auth');
 const { logAudit, getClientIp } = require('./utils/auditLog');
+const { autoGenerateCertificate, cancelCertificatesForHolding } = require('./utils/certificateUtils');
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
@@ -37,6 +38,7 @@ exports.handler = async (event) => {
       if (action === 'transfer-shares') return await handleTransfer(event);
       if (action === 'cancel-shares') return await handleCancel(event);
       if (action === 'execute-split') return await handleSplit(event);
+      if (action === 'update-document-urls') return await handleUpdateDocumentUrls(event);
       return json(400, { success:false, error:'Invalid action' });
     }
 
@@ -202,7 +204,7 @@ async function handleIssue(event) {
 
   // Validate stock type
   const typeRes = await query(
-    `SELECT id, entity_id, supports_series, is_active
+    `SELECT id, entity_id, supports_series, is_active, authorized_shares
      FROM entity_stock_types
      WHERE id = $1`,
     [entity_stock_type_id]
@@ -222,25 +224,70 @@ async function handleIssue(event) {
   }
 
   // Validate series rules
+  let seriesAuthorizedShares = null;
   if (st.supports_series) {
     if (!entity_stock_series_id) {
       return json(400, { success:false, error:'Series is required for this stock type' }, headers);
     }
 
     const sRes = await query(
-      `
-      SELECT id
-      FROM entity_stock_series
-      WHERE id = $1 AND entity_stock_type_id = $2 AND is_active = TRUE
-      `,
+      `SELECT id, authorized_shares
+			   
+       FROM entity_stock_series
+       WHERE id = $1 AND entity_stock_type_id = $2 AND is_active = TRUE`,
+		
       [entity_stock_series_id, entity_stock_type_id]
     );
 
     if (!sRes.rows.length) {
       return json(400, { success:false, error:'Invalid or inactive series' }, headers);
     }
+    seriesAuthorizedShares = sRes.rows[0].authorized_shares;
   } else if (entity_stock_series_id) {
     return json(400, { success:false, error:'Series not allowed for this stock type' }, headers);
+  }
+
+  // ── Authorized Shares Validation ──
+  // Use series-level limit if set, otherwise fall back to class-level
+  const authorizedLimit = seriesAuthorizedShares !== null && seriesAuthorizedShares !== undefined
+    ? parseFloat(seriesAuthorizedShares)
+    : (st.authorized_shares !== null && st.authorized_shares !== undefined ? parseFloat(st.authorized_shares) : null);
+
+  if (authorizedLimit !== null && authorizedLimit > 0) {
+    // Calculate current outstanding: ISSUANCE adds, CANCELLATION/FORFEITURE subtracts
+    const outstandingRes = await query(`
+      SELECT COALESCE(SUM(
+        CASE
+          WHEN transaction_type = 'ISSUANCE' THEN shares
+          WHEN transaction_type IN ('CANCELLATION', 'FORFEITURE') THEN shares
+          ELSE 0
+        END
+      ), 0) AS outstanding
+      FROM share_transactions
+      WHERE entity_id = $1
+        AND entity_stock_type_id = $2
+        ${entity_stock_series_id && seriesAuthorizedShares !== null ? 'AND entity_stock_series_id = $3' : ''}
+    `, entity_stock_series_id && seriesAuthorizedShares !== null
+      ? [user.entity_id, entity_stock_type_id, entity_stock_series_id]
+      : [user.entity_id, entity_stock_type_id]
+    );
+
+    const currentOutstanding = parseFloat(outstandingRes.rows[0].outstanding || 0);
+    const newShares = parseFloat(shares);
+
+    if (currentOutstanding + newShares > authorizedLimit) {
+      return json(400, {
+        success: false,
+        error: `Cannot issue ${newShares.toLocaleString()} shares. Current outstanding: ${currentOutstanding.toLocaleString()}, Authorized limit: ${authorizedLimit.toLocaleString()}. Available: ${(authorizedLimit - currentOutstanding).toLocaleString()}.`,
+        error_code: 'ERR_EXCEEDS_AUTHORIZED_SHARES',
+        details: {
+          authorized: authorizedLimit,
+          outstanding: currentOutstanding,
+          requested: newShares,
+          available: authorizedLimit - currentOutstanding
+        }
+      }, headers);
+    }
   }
 
   const result = await query(
@@ -283,7 +330,34 @@ async function handleIssue(event) {
     ip_address: getClientIp(event),
   });
 
-  return json(201, { success:true, transaction: result.rows[0] }, headers);
+  // Auto-generate stock certificate for this issuance
+  let certificate = null;
+  try {
+    certificate = await autoGenerateCertificate({
+      entityId: user.entity_id,
+      shareholderId: shareholder_id,
+      shareTransactionId: result.rows[0].id,
+      entityStockTypeId: entity_stock_type_id,
+      entityStockSeriesId: entity_stock_series_id || null,
+      shares,
+      issueDate: transaction_date || null,
+      createdBy: user.id,
+    });
+
+    if (certificate) {
+      await logAudit({
+        user_id: user.id, user_email: user.email, user_role: user.role,
+        entity_id: user.entity_id, action: 'AUTO_GENERATE_CERTIFICATE',
+        resource_type: 'STOCK_CERTIFICATE', resource_id: certificate.id,
+        details: { certificate_number: certificate.certificate_number, shareholder_id, shares, trigger: 'ISSUANCE' },
+        ip_address: getClientIp(event),
+      });
+    }
+  } catch (certErr) {
+    console.error('Auto-certificate generation failed (non-fatal):', certErr.message);
+  }
+
+  return json(201, { success:true, transaction: result.rows[0], certificate }, headers);
 }
 
 /* =====================================================
@@ -420,11 +494,164 @@ async function handleTransfer(event) {
     ip_address: getClientIp(event),
   });
 
+  // ── FIFO Certificate Allocation & Reissuance ──
+  // Per transfer-agent model: cancel affected certs, reissue remainder + transferred
+  let cancelledCerts = [];
+  let newReceiverCert = null;
+  let newSenderCerts = [];
+  try {
+    // 1. Fetch sender's ISSUED certificates for this stock type/series, ordered FIFO
+    const senderCertsRes = await query(`
+      SELECT id, certificate_number, shares, original_issue_date, issue_date,
+             entity_stock_type_id, entity_stock_series_id, shareholder_id,
+             signed_by_name, signed_by_title, countersigned_by_name, countersigned_by_title
+      FROM stock_certificates
+      WHERE entity_id = $1 AND shareholder_id = $2 AND entity_stock_type_id = $3
+        ${entity_stock_series_id ? 'AND entity_stock_series_id = $4' : 'AND entity_stock_series_id IS NULL'}
+        AND status = 'ISSUED'
+      ORDER BY COALESCE(original_issue_date, issue_date) ASC, id ASC
+    `, entity_stock_series_id
+      ? [user.entity_id, from_shareholder_id, entity_stock_type_id, entity_stock_series_id]
+      : [user.entity_id, from_shareholder_id, entity_stock_type_id]
+    );
+
+    const senderCerts = senderCertsRes.rows;
+    let remaining = sharesNum;
+
+    // 2. FIFO allocation: determine which certs are fully/partially consumed
+    const allocations = []; // { cert, usedShares, remainderShares }
+    for (const cert of senderCerts) {
+      if (remaining <= 0) break;
+      const certShares = parseFloat(cert.shares);
+      const used = Math.min(certShares, remaining);
+      allocations.push({
+        cert,
+        usedShares: used,
+        remainderShares: certShares - used,
+        originalIssueDate: cert.original_issue_date || cert.issue_date,
+      });
+      remaining -= used;
+    }
+
+    // 3. Cancel all affected certificates
+													
+							   
+									   
+											  
+											  
+														  
+						
+								
+						 
+	   
+
+						 
+												
+    for (const alloc of allocations) {
+      await query(
+        `UPDATE stock_certificates SET status = 'CANCELLED', cancelled_at = NOW(), cancelled_reason = $1, updated_at = NOW() WHERE id = $2`,
+        [`Cancelled for transfer of ${alloc.usedShares} shares to shareholder #${to_shareholder_id}`, alloc.cert.id]
+      );
+      cancelledCerts.push(alloc.cert);
+
+      await logAudit({
+        user_id: user.id, user_email: user.email, user_role: user.role,
+        entity_id: user.entity_id, action: 'AUTO_CANCEL_CERTIFICATE',
+        resource_type: 'STOCK_CERTIFICATE', resource_id: alloc.cert.id,
+        details: { certificate_number: alloc.cert.certificate_number, trigger: 'TRANSFER', transfer_to: to_shareholder_id, shares_used: alloc.usedShares },
+        ip_address: getClientIp(event),
+      });
+    }
+
+    // 4. Issue remainder certificates back to sender (one per partially-consumed cert)
+    for (const alloc of allocations) {
+      if (alloc.remainderShares > 0) {
+        const remainderCert = await autoGenerateCertificate({
+          entityId: user.entity_id,
+          shareholderId: from_shareholder_id,
+          shareTransactionId: outResult.rows[0].id,
+          entityStockTypeId: entity_stock_type_id,
+          entityStockSeriesId: entity_stock_series_id || null,
+          shares: alloc.remainderShares,
+          issueDate: null, // certificate_issue_date = today
+          createdBy: user.id,
+          // New fields for date preservation
+          originalIssueDate: alloc.originalIssueDate,
+          transferDate: null, // No transfer - same owner
+          sourceCertificateId: alloc.cert.id,
+        });
+        if (remainderCert) {
+          newSenderCerts.push(remainderCert);
+          // Link cancelled cert to its remainder
+          await query('UPDATE stock_certificates SET replaced_by_certificate_id = $1 WHERE id = $2', [remainderCert.id, alloc.cert.id]);
+
+          await logAudit({
+            user_id: user.id, user_email: user.email, user_role: user.role,
+            entity_id: user.entity_id, action: 'AUTO_GENERATE_CERTIFICATE',
+            resource_type: 'STOCK_CERTIFICATE', resource_id: remainderCert.id,
+            details: {
+              certificate_number: remainderCert.certificate_number,
+              shareholder_id: from_shareholder_id,
+              shares: alloc.remainderShares,
+              trigger: 'TRANSFER_REMAINDER',
+              source_certificate: alloc.cert.certificate_number,
+              original_issue_date: alloc.originalIssueDate,
+            },
+            ip_address: getClientIp(event),
+          });
+        }
+      }
+    }
+
+    // 5. Issue NEW certificate for receiver (never merge with existing certs)
+    // The original_issue_date of the FIRST consumed cert is used as lineage
+    const firstAllocDate = allocations.length > 0 ? allocations[0].originalIssueDate : null;
+    newReceiverCert = await autoGenerateCertificate({
+      entityId: user.entity_id,
+      shareholderId: to_shareholder_id,
+      shareTransactionId: inResult.rows[0].id,
+      entityStockTypeId: entity_stock_type_id,
+      entityStockSeriesId: entity_stock_series_id || null,
+      shares: sharesNum,
+      issueDate: null, // certificate_issue_date = today
+      createdBy: user.id,
+      // New fields
+      originalIssueDate: firstAllocDate,
+      transferDate: txDate,
+      sourceCertificateId: allocations.length > 0 ? allocations[0].cert.id : null,
+    });
+
+    if (newReceiverCert) {
+      await logAudit({
+        user_id: user.id, user_email: user.email, user_role: user.role,
+        entity_id: user.entity_id, action: 'AUTO_GENERATE_CERTIFICATE',
+        resource_type: 'STOCK_CERTIFICATE', resource_id: newReceiverCert.id,
+        details: {
+          certificate_number: newReceiverCert.certificate_number,
+          shareholder_id: to_shareholder_id,
+          shares: sharesNum,
+          trigger: 'TRANSFER',
+          original_issue_date: firstAllocDate,
+          transfer_date: txDate,
+          source_certificates: cancelledCerts.map(c => c.certificate_number),
+        },
+        ip_address: getClientIp(event),
+      });
+    }
+  } catch (certErr) {
+    console.error('Auto-certificate transfer handling failed (non-fatal):', certErr.message);
+  }
+
   return json(201, { 
     success:true, 
     transactions: {
       transfer_out: outResult.rows[0],
       transfer_in: inResult.rows[0]
+    },
+    certificates: {
+      cancelled: cancelledCerts.map(c => c.certificate_number),
+      sender_new: newSenderCerts.map(c => ({ id: c.id, certificate_number: c.certificate_number, shares: c.shares })),
+      receiver_new: newReceiverCert,
     }
   }, headers);
 }
@@ -587,8 +814,8 @@ async function handleSplit(event) {
   const adjustments = [];
 
   // 2️⃣ Wrap all inserts in a DB transaction for atomicity
-  await query('BEGIN');
-  try {
+  await withTransaction(async (client) => {
+	
     for (const holder of holdersResult.rows) {
       const currentShares = parseFloat(holder.current_shares);
       let newSharesCount;
@@ -604,7 +831,7 @@ async function handleSplit(event) {
       const adjustment = newSharesCount - currentShares;
       if (adjustment === 0) continue;
 
-      const insertResult = await query(`
+      const insertResult = await client.query(`
         INSERT INTO share_transactions (
           entity_id, shareholder_id, transaction_type, transaction_date,
           entity_stock_type_id, entity_stock_series_id, shares, notes, created_by
@@ -623,7 +850,7 @@ async function handleSplit(event) {
       ]);
 
       adjustments.push({
-									  
+	 
         shareholder_id: holder.shareholder_id,
         pre_split_shares: currentShares,
         post_split_shares: newSharesCount,
@@ -631,12 +858,7 @@ async function handleSplit(event) {
         transaction: insertResult.rows[0],
       });
     }
-
-    await query('COMMIT');
-  } catch (txError) {
-    await query('ROLLBACK');
-    throw txError;	   
-  }
+  });
 
   // 3️⃣ Snapshot: compute total outstanding after split
   const totalOutstandingAfter = adjustments.reduce(
@@ -664,4 +886,56 @@ async function handleSplit(event) {
       adjustments,
     }
   }, headers);
+}
+
+/* =====================================================
+   POST: Update Document URLs on a Transaction
+===================================================== */
+async function handleUpdateDocumentUrls(event) {
+  const auth = await authMiddleware(event);
+  if (auth.statusCode) return auth;
+  const { user, headers } = auth;
+
+  const canUpdate = requireRole(['SUPER_ADMIN', 'ADMIN', 'ENTITY_ADMIN', 'MANAGER'])(user);
+  if (!canUpdate) return json(403, { success:false, error:'Forbidden' }, headers);
+
+  const body = parseBody(event);
+  const { transaction_id, document_urls } = body;
+
+  if (!transaction_id || !document_urls || !Array.isArray(document_urls)) {
+    return json(400, { success:false, error:'transaction_id and document_urls array required' }, headers);
+  }
+
+  // Verify transaction belongs to user's entity
+  const txCheck = await query(
+    'SELECT id, entity_id FROM share_transactions WHERE id = $1',
+    [transaction_id]
+  );
+
+  if (!txCheck.rows.length) {
+    return json(404, { success:false, error:'Transaction not found' }, headers);
+  }
+
+  if (!enforceEntityScope(user, txCheck.rows[0].entity_id)) {
+    return json(403, { success:false, error:'Forbidden' }, headers);
+  }
+
+  // Append to existing document_urls (don't overwrite)
+  const result = await query(
+    `UPDATE share_transactions 
+     SET document_urls = COALESCE(document_urls, '{}') || $1::text[]
+     WHERE id = $2
+     RETURNING id, document_urls`,
+    [document_urls, transaction_id]
+  );
+
+  await logAudit({
+    user_id: user.id, user_email: user.email, user_role: user.role,
+    entity_id: user.entity_id, action: 'UPDATE_DOCUMENT_URLS',
+    resource_type: 'SHARE_TRANSACTION', resource_id: transaction_id,
+    details: { document_urls },
+    ip_address: getClientIp(event),
+  });
+
+  return json(200, { success:true, transaction: result.rows[0] }, headers);
 }

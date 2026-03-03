@@ -74,16 +74,26 @@
         <span class="sidebar-item-text">Stock Types</span>
       </button>
 
+      <button class="sidebar-item" data-tab="certificates" onclick="AdminApp.switchTab('certificates')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        <span class="sidebar-item-text">Certificates</span>
+      </button>
+
       <div class="sidebar-divider"></div>
       <div class="sidebar-section-label">Tools</div>
 
-      <button class="sidebar-item" disabled>
+      <button class="sidebar-item" data-tab="plan-billing" onclick="AdminApp.switchTab('plan-billing')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
           <line x1="1" y1="10" x2="23" y2="10"></line>
         </svg>
         <span class="sidebar-item-text">Plan & Billing</span>
-        <span class="sidebar-badge">Soon</span>
+											   
       </button>
 
       <button class="sidebar-item" disabled>
@@ -257,9 +267,58 @@
             </div>
           </div>
         </div>
-      </div> <!-- end admin-content -->
+
+        <!-- Certificates Tab -->
+        <div class="tab-panel" id="panel-certificates">
+          <div class="panel-header">
+            <h2>Stock Certificates</h2>
+            <div class="panel-actions">
+              <div class="entity-filter-row">
+                <select id="certFilterStatus" onchange="AdminApp.loadCertificates()" style="min-width:140px;">
+                  <option value="">All Status</option>
+                  <option value="ISSUED">Issued</option>
+                  <option value="CANCELLED">Cancelled</option>
+                  <option value="REPLACED">Replaced</option>
+                </select>
+                <input type="text" id="certSearchInput" placeholder="Search name or cert #..." oninput="AdminApp.loadCertificates()" style="min-width:200px;" />
+              </div>
+              <button class="btn btn-gold" onclick="AdminApp.openGenerateCertificateModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Generate Certificate
+              </button>
+            </div>
+          </div>
+          <div class="data-table-container" id="certificatesTable">
+            <div class="empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+              </svg>
+              <span>Select an entity to view certificates</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Plan & Billing Tab -->
+        <div class="tab-panel" id="panel-plan-billing">
+          <div class="panel-header">
+            <h2>Plan & Billing</h2>
+          </div>
+          <div class="plan-billing-content" id="planBillingContent">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <span>Loading plan details...</span>
+            </div>
+          </div>
+        </div>
+
+        </div> <!-- end admin-content -->
     </div> <!-- end admin-main -->
   </div> <!-- end admin-layout -->
+								  
 
 <!-- ================= MODALS ================= -->
 
@@ -620,7 +679,243 @@
   </div>
 </div>
 
-<!-- Toast Container -->
+<!-- Generate Certificate Modal -->
+<div class="modal-overlay hidden" id="generateCertificateModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Generate Stock Certificate</h3>
+      <button class="modal-close" onclick="UI.closeModal('generateCertificateModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="generateCertificateForm" onsubmit="AdminApp.handleGenerateCertificateSubmit(event)">
+        <div class="form-group">
+          <label for="certShareholder">Shareholder *</label>
+          <select id="certShareholder" required></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="certStockType">Stock Type *</label>
+            <select id="certStockType" required onchange="AdminApp.handleCertStockTypeChange()"></select>
+          </div>
+          <div class="form-group">
+            <label for="certSeries">Series</label>
+            <select id="certSeries" disabled></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="certShares">Number of Shares *</label>
+            <input type="number" id="certShares" required min="1" step="1" />
+          </div>
+          <div class="form-group">
+            <label for="certIssueDate">Issue Date</label>
+            <input type="date" id="certIssueDate" />
+          </div>
+        </div>
+        <div class="form-section">
+          <h4 class="form-section-title">Authorized Signatories</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="certSignedByName">Officer Name</label>
+              <input type="text" id="certSignedByName" placeholder="e.g. Jane Doe" />
+            </div>
+            <div class="form-group">
+              <label for="certSignedByTitle">Officer Title</label>
+              <input type="text" id="certSignedByTitle" placeholder="e.g. President" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="certCountersignedByName">Secretary Name</label>
+              <input type="text" id="certCountersignedByName" placeholder="e.g. John Roe" />
+            </div>
+            <div class="form-group">
+              <label for="certCountersignedByTitle">Secretary Title</label>
+              <input type="text" id="certCountersignedByTitle" placeholder="e.g. Secretary" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('generateCertificateModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold" id="certSubmitBtn">Generate Certificate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel Certificate Modal -->
+<div class="modal-overlay hidden" id="cancelCertificateModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Cancel Certificate</h3>
+      <button class="modal-close" onclick="UI.closeModal('cancelCertificateModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="cancel-cert-info" id="cancelCertInfo"></div>
+      <form id="cancelCertificateForm" onsubmit="AdminApp.handleCancelCertificateSubmit(event)">
+        <input type="hidden" id="cancelCertId" />
+        <div class="form-group">
+          <label for="cancelCertReason">Reason for Cancellation *</label>
+          <textarea id="cancelCertReason" rows="3" required placeholder="Enter reason for cancellation..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('cancelCertificateModal')">Cancel</button>
+          <button type="submit" class="btn btn-danger">Cancel Certificate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reissue Certificate Modal -->
+<div class="modal-overlay hidden" id="reissueCertificateModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Reissue Certificate</h3>
+      <button class="modal-close" onclick="UI.closeModal('reissueCertificateModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="reissue-cert-info" id="reissueCertInfo"></div>
+      <form id="reissueCertificateForm" onsubmit="AdminApp.handleReissueCertificateSubmit(event)">
+        <input type="hidden" id="reissueCertId" />
+        <div class="form-group">
+          <label for="reissueReason">Reason for Reissuance *</label>
+          <textarea id="reissueReason" rows="2" required placeholder="e.g. Transfer, correction, lost certificate..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="reissueNewShareholder">New Shareholder (leave blank to keep same)</label>
+          <select id="reissueNewShareholder">
+            <option value="">Same shareholder</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="reissueNewShares">New Share Count (leave blank to keep same)</label>
+          <input type="number" id="reissueNewShares" min="1" step="1" placeholder="Same shares" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('reissueCertificateModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold">Reissue Certificate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Report Lost Certificate Modal -->
+<div class="modal-overlay hidden" id="reportLostCertificateModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Report Lost Certificate</h3>
+      <button class="modal-close" onclick="UI.closeModal('reportLostCertificateModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="lost-cert-info" id="lostCertInfo"></div>
+      <form id="reportLostCertificateForm" onsubmit="AdminApp.handleReportLostSubmit(event)">
+        <input type="hidden" id="lostCertId" />
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">
+          This will mark the original certificate as <strong>REPLACED (LOST)</strong> and generate a new replacement certificate with the same shareholder, shares, and stock type.
+        </p>
+        <div class="form-section">
+          <h4 class="form-section-title">Replacement Certificate Signatories (optional)</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="lostSignedByName">Officer Name</label>
+              <input type="text" id="lostSignedByName" placeholder="Leave blank to keep original" />
+            </div>
+            <div class="form-group">
+              <label for="lostSignedByTitle">Officer Title</label>
+              <input type="text" id="lostSignedByTitle" placeholder="Leave blank to keep original" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="lostCountersignedByName">Secretary Name</label>
+              <input type="text" id="lostCountersignedByName" placeholder="Leave blank to keep original" />
+            </div>
+            <div class="form-group">
+              <label for="lostCountersignedByTitle">Secretary Title</label>
+              <input type="text" id="lostCountersignedByTitle" placeholder="Leave blank to keep original" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('reportLostCertificateModal')">Cancel</button>
+          <button type="submit" class="btn btn-danger" id="lostCertSubmitBtn">Report Lost & Issue Replacement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Generate Affidavit Modal -->
+<div class="modal-overlay hidden" id="generateAffidavitModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Generate Lost Certificate Affidavit</h3>
+      <button class="modal-close" onclick="UI.closeModal('generateAffidavitModal')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="affidavit-cert-info" id="affidavitCertInfo"></div>
+      <form id="generateAffidavitForm" onsubmit="AdminApp.handleGenerateAffidavitSubmit(event)">
+        <input type="hidden" id="affidavitCertId" />
+        <div class="form-group">
+          <label for="affidavitNarrative">Additional Narrative (optional)</label>
+          <textarea id="affidavitNarrative" rows="3" placeholder="Describe circumstances of the loss..."></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="affidavitSignerName">Affiant Name</label>
+            <input type="text" id="affidavitSignerName" placeholder="Shareholder name (default)" />
+          </div>
+          <div class="form-group">
+            <label for="affidavitSignerTitle">Affiant Title</label>
+            <input type="text" id="affidavitSignerTitle" placeholder="Registered Owner (default)" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="affidavitNotaryState">Notary State</label>
+            <input type="text" id="affidavitNotaryState" placeholder="e.g. Delaware" />
+          </div>
+          <div class="form-group">
+            <label for="affidavitNotaryCounty">Notary County</label>
+            <input type="text" id="affidavitNotaryCounty" placeholder="e.g. New Castle" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="UI.closeModal('generateAffidavitModal')">Cancel</button>
+          <button type="submit" class="btn btn-gold" id="affidavitSubmitBtn">Generate Affidavit PDF</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 <div class="toast-container" id="toastContainer"></div>
 
 <script src="/assets/js/admin.js"></script>

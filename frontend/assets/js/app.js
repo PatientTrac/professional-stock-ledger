@@ -11,7 +11,7 @@ const isLocalDev =
 
 const API_BASE_URL = isLocalDev
   ? "http://localhost:8888/api"
-  : "/.netlify/functions";
+  : "/.netlify/functions"; 
 
 /* ================= GLOBAL STATE ================= */
 const state = {
@@ -93,25 +93,42 @@ function logout() {
 /* ================= API HELPER ================= */
 async function apiCall(path, options = {}) {
   const token = getAuthToken();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
   
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...options,
-  });
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: controller.signal,
+      ...options,
+    });
 
-  if (res.status === 401) {
-    logout();
-    return null;
-  }
+    clearTimeout(timeoutId);
+			 
+				
+   
 
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    throw new Error(data.error || 'API Error');
+    if (res.status === 401) {
+      logout();
+      return null;
+    }
+
+    const data = await res.json();
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || 'API Error');
+    }
+    return data;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out. Please try again.');
+    }
+    throw error;
   }
-  return data;
+			  
 }
 
 /* ================= INITIALIZATION ================= */
@@ -207,12 +224,8 @@ function setupRoleBasedUI() {
   if (corporateActionsDropdown) {
     const user = getCurrentUser();
     if (user && user.role !== 'SUPER_ADMIN' && user.role !== 'ENTITY_ADMIN') {
-																
-																	   
-																	   
-      corporateActionsDropdown.style.display = 'none';
+	  corporateActionsDropdown.style.display = 'none';
     }
-																
   }
 
   // VIEWER: hide all action toolbar entirely
@@ -411,8 +424,6 @@ async function handleStockTypeChange() {
 /* ================= OWNERSHIP GRID ================= */
 async function loadOwnership() {
   const entityId = isSuperAdmin() ? state.filters.entityId : state.user.entity_id;
-							 
-						   
   
   let url = `/reports?action=ownership-report`;
   if (entityId) {
@@ -1066,35 +1077,10 @@ function closeShareholderModal() {
 
 async function handleShareholderSubmit(event) {
   event.preventDefault();
-  const btn = event.target.querySelector('button[type="submit"]');
-																		   
-								 
-  
-				   
-															 
-																		 
-															  
-															  
-																  
-															
-															  
-																   
-																  
-																		   
-															   
-															 
-	
-  
-			   
-							   
-   
-  
+  const btn = event.target.querySelector('button[type="submit"]');  
   withSubmitGuard(btn, async () => {
     const shareholderId = document.getElementById('formShareholderId').value;
     const isEdit = !!shareholderId;
-								   
-	   
-    
     const payload = {
       full_name: document.getElementById('formFullName').value,
       external_id: document.getElementById('formExternalId').value || null,
@@ -1245,6 +1231,10 @@ function openIssueSharesModal() {
   document.getElementById('issueSeries').innerHTML = '<option value="">N/A</option>';
   document.getElementById('issueSeries').disabled = true;
   
+  // Clear file list
+  const issueFileList = document.getElementById('issueFileList');
+  if (issueFileList) issueFileList.innerHTML = '';
+  
   openModal('issueSharesModal');
 }
 
@@ -1267,16 +1257,6 @@ async function handleIssueStockTypeChange() {
 async function handleIssueSharesSubmit(event) {
   event.preventDefault();
   const btn = event.target.querySelector('button[type="submit"]');
-				   
-																	  
-																		  
-																				 
-																   
-																		 
-																				  
-															  
-	
-  
   withSubmitGuard(btn, async () => {
     const payload = {
       shareholder_id: document.getElementById('issueShareholder').value,
@@ -1289,13 +1269,23 @@ async function handleIssueSharesSubmit(event) {
     };
     
     try {
-      await apiCall('/ledger?action=issue-shares', {
+      const result = await apiCall('/ledger?action=issue-shares', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
       
+      // Upload supporting documents if any
+      const transactionId = result.transaction?.id;
+      const entityId = state.filters.entityId || state.user.entity_id;
+      if (transactionId) {
+        await uploadTransactionDocuments(transactionId, entityId, 'issueFileUpload');
+      }
+      
       closeModal('issueSharesModal');
-      showToast('Shares issued successfully', 'success');
+      const certMsg = result.certificate 
+        ? ` Certificate ${result.certificate.certificate_number} generated.`
+        : '';
+      showToast('Shares issued successfully.' + certMsg, 'success');
       await loadOwnership();
     } catch (error) {
       showToast(error.message || 'Failed to issue shares', 'error');
@@ -1319,6 +1309,10 @@ function openTransferStockModal() {
   document.getElementById('transferToType').value = 'existing';
   document.getElementById('newShareholderFields').classList.add('hidden');
   document.getElementById('existingReceiverGroup').style.display = 'block';
+  
+  // Clear file list
+  const transferFileList = document.getElementById('transferFileList');
+  if (transferFileList) transferFileList.innerHTML = '';
   
   openModal('transferStockModal');
 }
@@ -1460,15 +1454,6 @@ function handleTransferToTypeChange() {
 async function handleTransferStockSubmit(event) {
   event.preventDefault();
   const btn = event.target.querySelector('button[type="submit"]');
-																 
-																		  
-																			   
-  
-								   
-															
-																		 
-		   
-   
   
   withSubmitGuard(btn, async () => {
     const toType = document.getElementById('transferToType').value;
@@ -1520,48 +1505,34 @@ async function handleTransferStockSubmit(event) {
     };
     
     try {
-      await apiCall('/ledger?action=transfer-shares', {
+      const result = await apiCall('/ledger?action=transfer-shares', {
         method: 'POST',
         body: JSON.stringify(payload)
-										
-											 
-																   
-		  
       });
       
+      // Upload supporting documents if any
+      const transactionId = result.transactions?.transfer_out?.id;
+      const entityId = state.filters.entityId || state.user.entity_id;
+      if (transactionId) {
+        await uploadTransactionDocuments(transactionId, entityId, 'transferFileUpload');
+      }
+      
       closeModal('transferStockModal');
-      showToast('Stock transferred successfully', 'success');
+      const certInfo = result.certificates;
+      let certMsg = '';
+      if (certInfo?.cancelled?.length) {
+        certMsg += ` ${certInfo.cancelled.length} certificate(s) cancelled.`;
+      }
+      if (certInfo?.new_certificate) {
+        certMsg += ` New certificate ${certInfo.new_certificate.certificate_number} issued.`;
+      }
+      showToast('Stock transferred successfully.' + certMsg, 'success');
       await loadOwnership();
     } catch (error) {
       showToast(error.message || 'Failed to transfer stock', 'error');
-			 
+	
     }
-   
-  
-									 
-  
-				   
-								
-									   
-																			 
-																					
-																	  
-																			
-		 
-	
-  
-	   
-													 
-					 
-								   
-  });
-	
-									 
-														   
-						  
-				   
-																	
-   
+  });   
 }
 
 function buildTransferNotes() {
@@ -1586,6 +1557,10 @@ function openCancelStockModal() {
   document.getElementById('cancelStockType').disabled = true;
   document.getElementById('cancelSeries').innerHTML = '<option value="">N/A</option>';
   document.getElementById('cancelSeries').disabled = true;
+  
+  // Clear file list
+  const cancelFileList = document.getElementById('cancelFileList');
+  if (cancelFileList) cancelFileList.innerHTML = '';
   
   openModal('cancelStockModal');
 }
@@ -1702,22 +1677,6 @@ async function handleCancelStockTypeChange() {
 async function handleCancelStockSubmit(event) {
   event.preventDefault();
   const btn = event.target.querySelector('button[type="submit"]');
-				   
-																							 
-																							  
-																											 
-															  
-											  
-  
-				   
-																	   
-																		   
-																				  
-																	
-																		  
-								   
-	
-  
   withSubmitGuard(btn, async () => {
     const notes = [];
     if (document.getElementById('cancelNotaryVerified').checked) notes.push('Notary Verified');
@@ -1736,10 +1695,17 @@ async function handleCancelStockSubmit(event) {
     };
     
     try {
-      await apiCall('/ledger?action=cancel-shares', {
+      const result = await apiCall('/ledger?action=cancel-shares', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
+      
+      // Upload supporting documents if any
+      const transactionId = result.transaction?.id;
+      const entityId = state.filters.entityId || state.user.entity_id;
+      if (transactionId) {
+        await uploadTransactionDocuments(transactionId, entityId, 'cancelFileUpload');
+      }
       
       closeModal('cancelStockModal');
       showToast('Stock cancelled successfully', 'success');
@@ -1801,9 +1767,6 @@ async function handleSplitStockTypeChange() {
 async function handleSplitSubmit(event) {
   event.preventDefault();
   const btn = event.target.querySelector('button[type="submit"]');
-																	
-																			  
-																			  
   
   withSubmitGuard(btn, async () => {
     const direction = document.getElementById('splitDirection').value;
@@ -2004,4 +1967,83 @@ function removeFile(inputId, fileIdx, listId) {
   });
   input.files = dt.files;
   handleFileSelect(input, listId);
+}
+
+/* ================= DOCUMENT UPLOAD VIA NETLIFY BACKEND ================= */
+async function uploadTransactionDocuments(transactionId, entityId, fileInputId) {
+  const input = document.getElementById(fileInputId);
+  if (!input || !input.files || input.files.length === 0) return [];
+
+  const uploadedDocs = [];
+  const user = getCurrentUser();
+  const token = getAuthToken();
+  const uploadUrl = `${API_BASE_URL}/documents`;
+
+  for (const file of Array.from(input.files)) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('transaction_id', String(transactionId));
+      formData.append('entity_id', String(entityId));
+      
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        uploadedDocs.push(data.document);
+      } else {
+        console.error('Upload failed for', file.name, data.error);
+        showToast(`Failed to upload ${file.name}: ${data.error}`, 'error');
+      }
+    } catch (err) {
+      console.error('Upload error for', file.name, err);
+      showToast(`Failed to upload ${file.name}`, 'error');
+    }
+  }
+
+  if (uploadedDocs.length > 0) {
+    showToast(`${uploadedDocs.length} document(s) uploaded successfully`, 'success');
+  }
+
+  return uploadedDocs;
+}
+
+async function loadTransactionDocuments(transactionId, entityId) {
+  const token = getAuthToken();
+  const listUrl = `${API_BASE_URL}/documents?action=list&transaction_id=${transactionId}&entity_id=${entityId}`;
+  try {
+    const res = await fetch(listUrl, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    return data.success ? data.documents : [];
+  } catch (err) {
+    console.error('Failed to load documents:', err);
+    return [];
+  }
+}
+
+async function deleteTransactionDocument(documentId, filePath) {
+  const token = getAuthToken();
+  try {
+    const res = await fetch(`${API_BASE_URL}/documents`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ document_id: documentId, file_path: filePath }),
+    });
+    const data = await res.json();
+    return data.success;
+  } catch (err) {
+    console.error('Failed to delete document:', err);
+    return false;
+  }
 }
